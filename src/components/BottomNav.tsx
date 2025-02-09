@@ -1,12 +1,13 @@
 "use client";
-
-import { Home, Book, BarChart2, Settings } from "lucide-react";
+import { Home, BarChart2, Mail, Video, Heart, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const navItems = [
   { icon: Home, label: "Home", href: "/dashboard" },
-  { icon: Book, label: "Journal", href: "/journal" },
+  { icon: Mail, label: "Letters", href: "/letters" },
+  { icon: Video, label: "Vlogs", href: "/vlogs" },
+  { icon: Heart, label: "Memories", href: "/memories" },
   { icon: BarChart2, label: "Progress", href: "/progress" },
   { icon: Settings, label: "Settings", href: "/settings" },
 ];

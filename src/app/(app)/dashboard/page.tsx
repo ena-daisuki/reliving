@@ -1,42 +1,39 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { BottomNav } from "@/components/BottomNav";
+"use client";
+
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
+import { useRouter } from "next/navigation";
 
 export default function Dashboard() {
-  return (
-    <div className="pb-16">
-      <header className="bg-purple-600 text-white p-4">
-        <h1 className="text-2xl font-bold">Welcome back, User!</h1>
-      </header>
-      <main className="p-4 space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Quick Journal</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p>How are you feeling today?</p>
-            {/* Add a quick journal entry form here */}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Your Progress</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p>You&apos;ve been smoke-free for 7 days!</p>
-            {/* Add a progress visualization here */}
-          </CardContent>
-        </Card>
+  const { userType } = useAuth();
+  const router = useRouter();
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Memories</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {/* Add a list or grid of recent memories here */}
-          </CardContent>
+  const handleAction = (action: string) => {
+    router.push(`/${action.toLowerCase()}`);
+  };
+
+  return (
+    <>
+      <h1 className="text-3xl font-bold mb-6 text-white">
+        Welcome Back, {userType === "owner" ? "Love" : "Special One"} 💖
+      </h1>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <Card className="p-6 bg-white/90">
+          <h2 className="text-xl font-semibold mb-4">Quick Actions</h2>
+          <div className="space-y-4">
+            <Button className="w-full" onClick={() => handleAction("letters")}>
+              Write a Letter ✍️
+            </Button>
+            <Button className="w-full" onClick={() => handleAction("vlogs")}>
+              Upload a Vlog 🎥
+            </Button>
+            <Button className="w-full" onClick={() => handleAction("memories")}>
+              Add a Memory 💙
+            </Button>
+          </div>
         </Card>
-      </main>
-      <BottomNav />
-    </div>
+      </div>
+    </>
   );
 }
