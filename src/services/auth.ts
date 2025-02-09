@@ -1,6 +1,7 @@
 import { auth } from "@/lib/firebase";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { setCookie } from "@/lib/cookies";
+import { createUser, updateLastLogin } from "./users";
 
 export async function loginWithKey(key: string) {
   try {
@@ -16,11 +17,15 @@ export async function loginWithKey(key: string) {
       ? process.env.NEXT_PUBLIC_OWNER_EMAIL
       : process.env.NEXT_PUBLIC_SPECIAL_EMAIL;
 
-    // Use the key as the password since that's what you set in Firebase
+    // Login with Firebase Auth
     const result = await signInWithEmailAndPassword(auth, email!, key);
     const token = await result.user.getIdToken();
 
-    // Set cookies directly on the client
+    // Create or update user record
+    await createUser(result.user.uid, isOwnerKey ? "owner" : "special");
+    await updateLastLogin(result.user.uid);
+
+    // Set cookies
     setCookie("auth-token", token);
     setCookie("user-type", isOwnerKey ? "owner" : "special");
 

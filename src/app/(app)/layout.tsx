@@ -14,7 +14,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="bg-gradient-to-br from-purple-400 to-indigo-600 min-h-screen">
       <Sidebar />
       <div className="md:pl-64 flex justify-center">
-        <div className="w-full max-w-2xl p-4">{children}</div>
+        <div className="w-full max-w-5xl p-4">{children}</div>
       </div>
     </div>
   );

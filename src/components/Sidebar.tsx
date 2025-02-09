@@ -1,7 +1,16 @@
 "use client";
 
 //import { getCookie } from "@/lib/cookies";
-import { Home, Mail, Video, Heart, Menu, X, LogOut } from "lucide-react"; // Settings,
+import {
+  Home,
+  Mail,
+  Video,
+  Heart,
+  Menu,
+  X,
+  LogOut,
+  BarChart2,
+} from "lucide-react"; // Settings,
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -12,6 +21,7 @@ const navItems = [
   { icon: Mail, label: "Letters", href: "/letters" },
   { icon: Video, label: "Vlogs", href: "/vlogs" },
   { icon: Heart, label: "Memories", href: "/memories" },
+  { icon: BarChart2, label: "Progress", href: "/progress" },
   // { icon: Settings, label: "Settings", href: "/settings" },
 ];
 
