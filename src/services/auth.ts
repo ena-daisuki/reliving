@@ -1,35 +1,32 @@
 import { auth } from "@/lib/firebase";
-import { signInWithCustomToken } from "firebase/auth";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { setCookie } from "@/lib/cookies";
 
 export async function loginWithKey(key: string) {
   try {
-    // Call server-side API to verify key and get custom token
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key }),
-    });
+    // Determine which credentials to use
+    const isOwnerKey = key === process.env.NEXT_PUBLIC_OWNER_KEY;
+    const isSpecialKey = key === process.env.NEXT_PUBLIC_SPECIAL_KEY;
 
-    if (!response.ok) throw new Error("Invalid key");
+    if (!isOwnerKey && !isSpecialKey) {
+      throw new Error("Invalid key");
+    }
 
-    const { token, userType } = await response.json();
+    const email = isOwnerKey
+      ? process.env.NEXT_PUBLIC_OWNER_EMAIL
+      : process.env.NEXT_PUBLIC_SPECIAL_EMAIL;
 
-    // Sign in with custom token
-    await signInWithCustomToken(auth, token);
+    // Use the key as the password since that's what you set in Firebase
+    const result = await signInWithEmailAndPassword(auth, email!, key);
+    const token = await result.user.getIdToken();
 
-    // Store user type
-    localStorage.setItem("user-type", userType);
+    // Set cookies directly on the client
+    setCookie("auth-token", token);
+    setCookie("user-type", isOwnerKey ? "owner" : "special");
+
+    return result.user;
   } catch (error) {
     console.error("Login error:", error);
     throw new Error("Login failed. Please check your key and try again.");
   }
-}
-
-export function logout() {
-  localStorage.removeItem("user-type");
-  return auth.signOut();
-}
-
-export function getCurrentUser() {
-  return auth.currentUser;
 }

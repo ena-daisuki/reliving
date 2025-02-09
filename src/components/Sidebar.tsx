@@ -1,5 +1,6 @@
 "use client";
 
+import { getCookie } from "@/lib/cookies";
 import {
   Home,
   Book,
@@ -24,12 +25,13 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const userType = getCookie("user-type");
 
   return (
     <div className="hidden md:flex flex-col w-64 bg-white h-screen fixed left-0 top-0 border-r border-gray-200">
       <div className="p-6 border-b border-gray-200">
         <h1 className="text-2xl font-bold text-purple-600">Reliving</h1>
-        <p className="text-sm text-gray-500 mt-1">Our Journey Together</p>
+        <p className="text-sm text-gray-500 mt-1">Our Time Together</p>
       </div>
       <nav className="flex-1 p-4">
         {navItems.map(({ icon: Icon, label, href }) => {
@@ -54,7 +56,9 @@ export function Sidebar() {
         <div className="flex items-center space-x-3 px-4 py-3">
           <div className="w-8 h-8 rounded-full bg-purple-200" />
           <div>
-            <p className="font-medium text-gray-900">Your Name</p>
+            <p className="font-medium text-gray-900">
+              {userType === "special" ? "Ena" : "Katsuo"}
+            </p>
             <p className="text-sm text-gray-500">View Profile</p>
           </div>
         </div>
