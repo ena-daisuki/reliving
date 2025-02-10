@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { Upload, Video } from "lucide-react";
+import { PageTitle } from "@/components/ui/page-title";
 
 export default function Vlogs() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -21,7 +22,7 @@ export default function Vlogs() {
 
   return (
     <>
-      <h1 className="text-3xl font-bold mb-6">Vlogs 🎥</h1>
+      <PageTitle>Vlogs 🎥</PageTitle>
 
       {/* Upload new vlog */}
       <Card className="p-6 bg-white/90 mb-6">

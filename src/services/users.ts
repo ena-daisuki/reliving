@@ -1,16 +1,20 @@
 import { db } from "@/lib/firebase";
 import { User } from "@/types/database";
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
 
-export async function createUser(userId: string, type: User["type"]) {
-  const userRef = doc(db, "users", userId);
-  const userData: Omit<User, "userId"> = {
+export async function createUser(uid: string, type: "owner" | "special") {
+  const userRef = doc(db, "users", uid);
+  await setDoc(userRef, {
     type,
-    createdAt: serverTimestamp() as unknown as Date,
-    lastLoginAt: serverTimestamp() as unknown as Date,
-  };
-
-  await setDoc(userRef, userData);
+    createdAt: serverTimestamp(),
+    lastLogin: serverTimestamp(),
+  });
 }
 
 export async function getUser(userId: string) {
@@ -27,13 +31,9 @@ export async function getUser(userId: string) {
   } as User;
 }
 
-export async function updateLastLogin(userId: string) {
-  const userRef = doc(db, "users", userId);
-  await setDoc(
-    userRef,
-    {
-      lastLoginAt: serverTimestamp(),
-    },
-    { merge: true }
-  );
+export async function updateLastLogin(uid: string) {
+  const userRef = doc(db, "users", uid);
+  await updateDoc(userRef, {
+    lastLogin: serverTimestamp(),
+  });
 }

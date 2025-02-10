@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
 import { Send } from "lucide-react";
+import { PageTitle } from "@/components/ui/page-title";
 
 export default function Letters() {
   const { userType } = useAuth();
@@ -18,7 +19,7 @@ export default function Letters() {
 
   return (
     <>
-      <h1 className="text-3xl font-bold mb-6">Letters 💌</h1>
+      <PageTitle>Letters 💌</PageTitle>
 
       {/* Write new letter */}
       <Card className="p-6 bg-white/90 mb-6">

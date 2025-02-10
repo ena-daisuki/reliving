@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { Upload, Image as ImageIcon } from "lucide-react";
+import { PageTitle } from "@/components/ui/page-title";
 
 export default function Memories() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -21,7 +22,7 @@ export default function Memories() {
 
   return (
     <>
-      <h1 className="text-3xl font-bold mb-6">Memories 📸</h1>
+      <PageTitle>Memories 📸</PageTitle>
 
       {/* Upload new memory */}
       <Card className="p-6 bg-white/90 mb-6">
