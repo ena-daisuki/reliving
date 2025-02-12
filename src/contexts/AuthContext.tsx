@@ -1,10 +1,11 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { getCookie, setCookie } from "@/lib/cookies";
+import { setCookie } from "@/lib/cookies";
 import { useRouter } from "next/navigation";
+import { doc, getDoc } from "firebase/firestore";
 
 type AuthContextType = {
   userType: "owner" | "special" | null;
@@ -23,15 +24,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         setUserType(null);
-        router.push("/login");
+        if (window.location.pathname !== "/login") {
+          router.push("/login");
+        }
       } else {
-        const type = getCookie("user-type") as "owner" | "special" | undefined;
-        if (!type) {
-          // If user is logged in but cookie is missing, log them out
+        try {
+          const userDoc = await getDoc(doc(db, "users", user.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            setUserType(userData.type);
+            setCookie("user-type", userData.type);
+          } else {
+            await signOut(auth);
+            router.push("/login");
+          }
+        } catch (error) {
+          console.error("Firestore error:", error);
           await signOut(auth);
           router.push("/login");
-        } else {
-          setUserType(type);
         }
       }
       setLoading(false);
@@ -41,10 +51,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router]);
 
   const logout = async () => {
-    await signOut(auth);
-    setCookie("auth-token", "");
-    setCookie("user-type", "");
-    router.push("/login");
+    try {
+      await signOut(auth);
+      setCookie("auth-token", "");
+      setCookie("user-type", "");
+      router.push("/login");
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
   };
 
   return (

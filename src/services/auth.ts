@@ -1,7 +1,9 @@
 import { auth } from "@/lib/firebase";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { setCookie } from "@/lib/cookies";
-import { createUser, updateLastLogin } from "./users";
+//import { createUser, updateLastLogin } from "./users";
+import { doc, setDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 
 export async function loginWithKey(key: string) {
   try {
@@ -21,9 +23,18 @@ export async function loginWithKey(key: string) {
     const result = await signInWithEmailAndPassword(auth, email!, key);
     const token = await result.user.getIdToken();
 
-    // Create or update user record
-    await createUser(result.user.uid, isOwnerKey ? "owner" : "special");
-    await updateLastLogin(result.user.uid);
+    // Create initial user document with type
+    const userRef = doc(db, "users", result.user.uid);
+    await setDoc(
+      userRef,
+      {
+        userId: result.user.uid,
+        type: isOwnerKey ? "owner" : "special",
+        createdAt: new Date(),
+        lastLogin: new Date(),
+      },
+      { merge: true }
+    ); // Use merge to preserve existing data
 
     // Set cookies
     setCookie("auth-token", token);

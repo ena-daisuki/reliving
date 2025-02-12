@@ -3,8 +3,13 @@ export type UserType = "owner" | "special";
 export interface User {
   userId: string;
   type: UserType;
+  youtubeTokens?: {
+    accessToken: string;
+    refreshToken: string;
+    expiryDate: Date;
+  };
   createdAt: Date;
-  lastLoginAt: Date;
+  lastLogin: Date;
 }
 
 export interface Letter {
@@ -17,13 +22,11 @@ export interface Letter {
 }
 
 export interface Vlog {
-  id?: string;
+  id: string;
   userId: string;
   title: string;
   url: string;
-  thumbnailUrl?: string;
   createdAt: Date;
-  filename: string;
 }
 
 export interface Memory {
@@ -46,4 +49,10 @@ export interface Progress {
     date: string;
     mood: MoodType;
   }[];
+}
+
+export interface VlogDetail {
+  id: string;
+  title: string;
+  createdAt: string;
 }

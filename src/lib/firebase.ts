@@ -18,4 +18,8 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 const storage = getStorage(app);
 
+// Set CORS configuration for Storage
+storage.maxOperationRetryTime = 10000;
+storage.maxUploadRetryTime = 10000;
+
 export { app, db, auth, storage };
