@@ -7,8 +7,7 @@ import {
   Video,
   Heart,
   Menu,
-  X,
-  LogOut,
+  X,LogOut,
   BarChart2,
 } from "lucide-react"; // Settings,
 import Link from "next/link";

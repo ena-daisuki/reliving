@@ -77,6 +77,12 @@ export async function uploadToYoutube(
 }
 
 export function initYoutubeAuth() {
+  const userType = localStorage.getItem("user-type");
+
+  if (userType === "owner") {
+    throw new Error("Owner account uses a permanent YouTube connection");
+  }
+
   const REDIRECT_URI = `${window.location.origin}/auth/youtube/callback`;
   const SCOPES = [
     "https://www.googleapis.com/auth/youtube.force-ssl",

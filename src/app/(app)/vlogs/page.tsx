@@ -5,26 +5,32 @@ import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
 import { Upload, Trash2 } from "lucide-react";
 import { PageTitle } from "@/components/ui/page-title";
+import { Loading } from "@/components/ui/loading";
 import { uploadVlog, getVlogs, deleteVlog } from "@/services/vlogs";
 import { Vlog } from "@/types/database";
 import { useAuth } from "@/contexts/AuthContext";
 import { auth } from "@/lib/firebase";
 import { initYoutubeAuth } from "@/services/youtube";
+import Image from "next/image";
+import Link from "next/link";
 
 export default function Vlogs() {
-  const { loading } = useAuth();
+  const { loading: authLoading } = useAuth();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [vlogs, setVlogs] = useState<Vlog[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [isYoutubeAuthed, setIsYoutubeAuthed] = useState(false);
+  const { userType } = useAuth();
 
   useEffect(() => {
-    if (!loading) {
+    if (!authLoading) {
       loadVlogs();
     }
-  }, [loading]);
+  }, [authLoading]);
 
   useEffect(() => {
     const token = localStorage.getItem("youtube_access_token");
@@ -32,12 +38,15 @@ export default function Vlogs() {
   }, []);
 
   const loadVlogs = async () => {
+    setIsLoading(true);
     try {
       const fetchedVlogs = await getVlogs();
       setVlogs(fetchedVlogs);
     } catch (error) {
       console.error("Error loading vlogs:", error);
       setError("Failed to load vlogs");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -73,17 +82,24 @@ export default function Vlogs() {
   };
 
   const handleDelete = async (vlogId: string) => {
+    setIsDeleting(vlogId);
     try {
       await deleteVlog(vlogId);
       loadVlogs();
     } catch (error) {
       console.error("Delete error:", error);
       setError("Failed to delete vlog");
+    } finally {
+      setIsDeleting(null);
     }
   };
 
-  if (loading) {
-    return <div>Loading...</div>;
+  if (authLoading) {
+    return <Loading text="Authenticating..." />;
+  }
+
+  if (isLoading) {
+    return <Loading text="Loading vlogs..." />;
   }
 
   return (
@@ -114,7 +130,7 @@ export default function Vlogs() {
               onChange={handleFileSelect}
             />
           </label>
-          {!isYoutubeAuthed && (
+          {!isYoutubeAuthed && userType !== "owner" && (
             <Button onClick={initYoutubeAuth} className="w-full mb-4">
               Connect YouTube Account
             </Button>
@@ -127,7 +143,11 @@ export default function Vlogs() {
               disabled={isUploading || !title}
             >
               <Upload className="w-4 h-4 mr-2" />
-              {isUploading ? "Uploading..." : "Upload Vlog"}
+              {isUploading ? (
+                <Loading text="Uploading vlog..." />
+              ) : (
+                "Upload Vlog"
+              )}
             </Button>
           )}
         </div>
@@ -136,22 +156,39 @@ export default function Vlogs() {
       {/* Vlogs grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {vlogs.map((vlog) => (
-          <Card key={vlog.id} className="p-4 bg-white/90">
-            <video className="w-full rounded-lg mb-2" controls src={vlog.url} />
-            <h3 className="font-semibold mb-2">{vlog.title}</h3>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-500">
-                {new Date(vlog.createdAt).toLocaleDateString()}
-              </span>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => vlog.id && handleDelete(vlog.id)}
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </div>
-          </Card>
+          <Link href={`/vlogs/${vlog.id}`} key={vlog.id}>
+            <Card className="p-4 bg-white/90 hover:bg-white transition-colors">
+              <div className="relative aspect-video mb-2">
+                <Image
+                  src={vlog.thumbnail}
+                  alt={vlog.title}
+                  fill
+                  className="rounded-lg object-cover"
+                />
+              </div>
+              <h3 className="font-semibold mb-2">{vlog.title}</h3>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-500">
+                  {new Date(vlog.createdAt).toLocaleDateString()}
+                </span>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={isDeleting === vlog.id}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (vlog.id) handleDelete(vlog.id);
+                  }}
+                >
+                  {isDeleting === vlog.id ? (
+                    <Loading />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+            </Card>
+          </Link>
         ))}
       </div>
     </>

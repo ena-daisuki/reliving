@@ -26,6 +26,7 @@ export interface Vlog {
   userId: string;
   title: string;
   url: string;
+  thumbnail: string;
   createdAt: Date;
 }
 
