@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // User rules
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow updating youtubeTokens specifically
+      allow update: if request.auth != null 
+        && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['youtubeTokens']);
+    }
+    
+    // Vlog rules
+    match /vlogs/{vlogId} {
+      // Allow reading all vlogs for authenticated users
+      allow read: if request.auth != null;
+      
+      // Allow creating vlogs if the user sets themselves as the owner
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      
+      // Allow updating and deleting vlogs if the user is the owner
+      allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+    
+    // Token rules
+    match /tokens/{tokenId} {
+      // Allow users to read their own tokens
+      allow read: if request.auth != null && (tokenId == request.auth.uid || tokenId == "owner");
+      
+      // Allow users to update their own tokens
+      allow update: if request.auth != null && tokenId == request.auth.uid;
+      
+      // For owner token, you might want to restrict this further based on your app's logic
+      allow read, write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "owner" && tokenId == "owner";
+    }
+    
+    // Default deny for all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+} 

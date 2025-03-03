@@ -25,6 +25,8 @@ export interface Vlog {
   id: string;
   userId: string;
   title: string;
+  description?: string;
+  visibility: "public" | "private" | "unlisted";
   url: string;
   thumbnail: string;
   createdAt: Date;
