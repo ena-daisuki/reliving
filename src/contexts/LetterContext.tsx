@@ -1,6 +1,12 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+} from "react";
 import { getUnreadLettersCount } from "@/services/letters";
 import { useAuth } from "./AuthContext";
 import { auth } from "@/lib/firebase";
@@ -16,7 +22,7 @@ export function LetterProvider({ children }: { children: React.ReactNode }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const { loading } = useAuth();
 
-  const refreshUnreadCount = async () => {
+  const refreshUnreadCount = useCallback(async () => {
     const currentUser = auth.currentUser;
     if (!currentUser || loading) return;
 
@@ -26,12 +32,12 @@ export function LetterProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // No need to log error here, as it's already handled in the service
     }
-  };
+  }, [loading]);
 
   // Refresh unread count when user changes
   useEffect(() => {
     refreshUnreadCount();
-  }, [loading]);
+  }, [refreshUnreadCount]);
 
   // Refresh unread count every minute
   useEffect(() => {
@@ -40,7 +46,7 @@ export function LetterProvider({ children }: { children: React.ReactNode }) {
     }, 60000); // 1 minute
 
     return () => clearInterval(interval);
-  }, []);
+  }, [refreshUnreadCount]);
 
   return (
     <LetterContext.Provider value={{ unreadCount, refreshUnreadCount }}>

@@ -3,7 +3,7 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Send, Mail, ArrowUpRight, Check } from "lucide-react";
 import { PageTitle } from "@/components/ui/page-title";
 import { auth } from "@/lib/firebase";
@@ -27,13 +27,13 @@ export default function Letters() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState("");
+  const currentUser = auth.currentUser;
 
-  const loadLetters = async () => {
+  const loadLetters = useCallback(async () => {
     setIsLoading(true);
     setError("");
 
     try {
-      const currentUser = auth.currentUser;
       if (!currentUser) {
         throw new Error("You must be logged in to view letters");
       }
@@ -74,11 +74,11 @@ export default function Letters() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentUser?.uid, refreshUnreadCount]);
 
   useEffect(() => {
     loadLetters();
-  }, []);
+  }, [loadLetters]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,7 +88,6 @@ export default function Letters() {
     setError("");
 
     try {
-      const currentUser = auth.currentUser;
       if (!currentUser) {
         throw new Error("You must be logged in to send a letter");
       }

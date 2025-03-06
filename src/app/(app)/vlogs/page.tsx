@@ -2,7 +2,7 @@
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Upload,
   Trash2,
@@ -25,7 +25,7 @@ import {
 } from "@/services/vlogs";
 import { Vlog } from "@/types/database";
 import { useAuth } from "@/contexts/AuthContext";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { initYoutubeAuth } from "@/services/youtube";
 import Image from "next/image";
 import Link from "next/link";
@@ -47,9 +47,10 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { getDoc, doc } from "firebase/firestore";
 
 export default function Vlogs() {
-  const { loading: authLoading } = useAuth();
+  const { loading: authLoading, userType } = useAuth();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedThumbnail, setSelectedThumbnail] = useState<File | null>(null);
   const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null);
@@ -66,7 +67,6 @@ export default function Vlogs() {
   const [vlogToDelete, setVlogToDelete] = useState<Vlog | null>(null);
   const [error, setError] = useState("");
   const [isYoutubeAuthed, setIsYoutubeAuthed] = useState(false);
-  const { userType } = useAuth();
   const [vlogToEdit, setVlogToEdit] = useState<Vlog | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
@@ -84,30 +84,28 @@ export default function Vlogs() {
   const [showSyncConfirm, setShowSyncConfirm] = useState(false);
   const [showUploadSection, setShowUploadSection] = useState(false);
 
-  useEffect(() => {
-    if (!authLoading) {
-      loadVlogs();
-      checkYoutubeAuth();
-    }
-  }, [authLoading]);
-
-  // Add a fallback check for owner accounts
-  useEffect(() => {
-    if (userType === "owner" && !isYoutubeAuthed) {
-      setIsYoutubeAuthed(true);
-    }
-  }, [userType, isYoutubeAuthed]);
-
-  const checkYoutubeAuth = async () => {
-    if (userType === "owner") {
-      // Owner is always authenticated with YouTube
-      setIsYoutubeAuthed(true);
-      return;
-    }
-
+  const checkYoutubeAuth = useCallback(async () => {
     try {
       const user = auth.currentUser;
-      if (!user) return;
+      if (!user) {
+        setIsYoutubeAuthed(false);
+        return;
+      }
+
+      // Get user data to determine if owner or regular user
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+      if (!userDoc.exists()) {
+        setIsYoutubeAuthed(false);
+        return;
+      }
+      const userData = userDoc.data();
+
+      // Check if user is owner
+      if (userData.type === "owner") {
+        // Owner is always authenticated with YouTube
+        setIsYoutubeAuthed(true);
+        return;
+      }
 
       // Check if user has YouTube tokens in Firestore
       try {
@@ -123,7 +121,66 @@ export default function Vlogs() {
     } catch {
       setIsYoutubeAuthed(false);
     }
-  };
+  }, []);
+
+  const loadVlogs = useCallback(
+    async (shouldSync = true) => {
+      setIsLoading(true);
+      setError("");
+      setSyncSuccess(false);
+      try {
+        // First sync with YouTube if needed
+        if (shouldSync && isYoutubeAuthed) {
+          try {
+            const result = await fetchYouTubeVideos();
+            setSyncMessage(`Sync complete! Found ${result.total} videos.`);
+            setSyncSuccess(true);
+          } catch (syncError) {
+            const errorMessage =
+              syncError instanceof Error ? syncError.message : "Unknown error";
+            setSyncMessage(`Sync failed: ${errorMessage}`);
+            setSyncSuccess(false);
+          }
+        }
+
+        // Then fetch vlogs from Firestore
+        const fetchedVlogs = await getVlogs();
+        setVlogs(fetchedVlogs);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "";
+        setError("Failed to load vlogs. " + errorMessage);
+
+        // Check if this is a token-related error for owner accounts
+        if (
+          userType === "owner" &&
+          (errorMessage.includes("token") ||
+            errorMessage.includes("401") ||
+            errorMessage.includes("authentication"))
+        ) {
+          setError(
+            "Failed to load vlogs. YouTube authentication issue detected. Please re-authenticate with YouTube."
+          );
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [isYoutubeAuthed]
+  );
+
+  useEffect(() => {
+    if (!authLoading) {
+      loadVlogs();
+      checkYoutubeAuth();
+    }
+  }, [authLoading, loadVlogs, checkYoutubeAuth]);
+
+  // Add a fallback check for owner accounts
+  useEffect(() => {
+    if (userType === "owner" && !isYoutubeAuthed) {
+      setIsYoutubeAuthed(true);
+    }
+  }, [userType, isYoutubeAuthed]);
 
   const handleSyncConfirm = () => {
     setShowSyncConfirm(false);
@@ -146,53 +203,6 @@ export default function Vlogs() {
       setSyncSuccess(false);
     } finally {
       setIsSyncing(false);
-    }
-  };
-
-  const loadVlogs = async (shouldSync = true) => {
-    setIsLoading(true);
-    setError("");
-    setSyncSuccess(false);
-    try {
-      // First sync YouTube videos with Firestore if shouldSync is true
-      if (shouldSync) {
-        setSyncMessage("Syncing with YouTube...");
-        setIsSyncing(true);
-        try {
-          const syncResults = await fetchYouTubeVideos();
-          setSyncMessage(`Sync complete! Found ${syncResults.total} videos.`);
-          setSyncSuccess(true);
-        } catch (syncError) {
-          const errorMessage =
-            syncError instanceof Error ? syncError.message : "Unknown error";
-          setSyncMessage(`Sync failed: ${errorMessage}`);
-          setSyncSuccess(false);
-          // Continue even if sync fails
-        } finally {
-          setIsSyncing(false);
-        }
-      }
-
-      // Then fetch vlogs from Firestore
-      const fetchedVlogs = await getVlogs();
-      setVlogs(fetchedVlogs);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "";
-      setError("Failed to load vlogs. " + errorMessage);
-
-      // Check if this is a token-related error for owner accounts
-      if (
-        userType === "owner" &&
-        (errorMessage.includes("token") ||
-          errorMessage.includes("401") ||
-          errorMessage.includes("authentication"))
-      ) {
-        setError(
-          "Failed to load vlogs. YouTube authentication issue detected. Please re-authenticate with YouTube."
-        );
-      }
-    } finally {
-      setIsLoading(false);
     }
   };
 

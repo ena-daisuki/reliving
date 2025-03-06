@@ -88,7 +88,7 @@ export async function getVlogs() {
 
     if (isOwner) {
       // For owner accounts, use the access token from environment variables
-      let accessToken = process.env.NEXT_PUBLIC_OWNER_YOUTUBE_ACCESS_TOKEN;
+      const accessToken = process.env.NEXT_PUBLIC_OWNER_YOUTUBE_ACCESS_TOKEN;
       const refreshToken = process.env.NEXT_PUBLIC_OWNER_YOUTUBE_REFRESH_TOKEN;
 
       if (!accessToken) {
@@ -98,7 +98,24 @@ export async function getVlogs() {
       }
 
       if (!refreshToken) {
-        // Handle warning or token refresh similar to the existing code
+        throw new Error(
+          "Owner YouTube refresh token not configured in environment variables"
+        );
+      }
+
+      // Use the access token to get the owner's videos directly
+      // First, get the user's channel ID
+      const channelsResponse = await fetch(
+        `https://www.googleapis.com/youtube/v3/channels?part=id,contentDetails&mine=true&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
+
+      if (!channelsResponse.ok) {
+        // Handle token refresh if needed
         if (channelsResponse.status === 401) {
           // Call your token refresh API with absolute URL
           const refreshResponse = await fetch(
@@ -130,25 +147,8 @@ export async function getVlogs() {
 
           // Retry with the new token by calling getVlogs again
           return getVlogs();
-        } else {
-          throw new Error(
-            `YouTube API error: ${channelsResponse.status} ${channelsResponse.statusText}`
-          );
         }
-      }
 
-      // Use the access token to get the owner's videos directly
-      // First, get the user's channel ID
-      let channelsResponse = await fetch(
-        `https://www.googleapis.com/youtube/v3/channels?part=id,contentDetails&mine=true&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      if (!channelsResponse.ok) {
         throw new Error(
           `Failed to get owner channel: ${channelsResponse.status} ${channelsResponse.statusText}`
         );
@@ -159,8 +159,6 @@ export async function getVlogs() {
       if (!channelsData.items || channelsData.items.length === 0) {
         throw new Error("No YouTube channel found for owner account");
       }
-
-      const userChannelId = channelsData.items[0].id;
 
       // Get the uploads playlist ID
       const uploadsPlaylistId =
@@ -237,6 +235,14 @@ export async function getVlogs() {
       }));
     } else {
       // For special accounts, check if they have YouTube tokens
+      if (!userData.youtubeTokens || !userData.youtubeTokens.accessToken) {
+        throw new Error(
+          "YouTube not connected - please connect your YouTube account in settings"
+        );
+      }
+
+      const accessToken = userData.youtubeTokens.accessToken;
+
       // First, get the user's channel ID
       const channelsResponse = await fetch(
         `https://www.googleapis.com/youtube/v3/channels?part=id&mine=true&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
@@ -596,7 +602,7 @@ export async function updateVlog(
       );
     }
 
-    const updateData = await updateResponse.json();
+    await updateResponse.json(); // Parse response but don't store it since it's not used
 
     // If a new thumbnail was provided, upload it to YouTube
     if (thumbnailFile) {
