@@ -23,7 +23,7 @@ export function LetterProvider({ children }: { children: React.ReactNode }) {
     try {
       const count = await getUnreadLettersCount(currentUser.uid);
       setUnreadCount(count);
-    } catch (error) {
+    } catch {
       // No need to log error here, as it's already handled in the service
     }
   };

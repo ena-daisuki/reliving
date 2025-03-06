@@ -7,7 +7,7 @@ import { PageTitle } from "@/components/ui/page-title";
 import { Vlog } from "@/types/database";
 import { getVlogById } from "@/services/vlogs";
 import { Loading } from "@/components/ui/loading";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, ArrowLeft } from "lucide-react";
 
 export default function VlogPage() {
   const { id } = useParams();
@@ -23,7 +23,6 @@ export default function VlogPage() {
         const vlogData = await getVlogById(id);
         setVlog(vlogData);
       } catch (error) {
-        console.error("Error loading vlog:", error);
         setError(
           error instanceof Error ? error.message : "Failed to load vlog"
         );
@@ -68,7 +67,16 @@ export default function VlogPage() {
 
   return (
     <>
-      <PageTitle>{vlog.title} 🎥</PageTitle>
+      <div className="flex items-center mb-4">
+        <button
+          onClick={() => router.push("/vlogs")}
+          className="flex items-center text-blue-500 hover:text-blue-700 mr-4"
+        >
+          <ArrowLeft className="w-4 h-4 mr-1" />
+          Back to Vlogs
+        </button>
+        <PageTitle>{vlog.title} 🎥</PageTitle>
+      </div>
       <Card className="p-6 bg-white/90">
         <div className="aspect-video w-full mb-4">
           <iframe

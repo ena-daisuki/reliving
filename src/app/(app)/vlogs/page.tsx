@@ -47,7 +47,6 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { logger } from "@/lib/logger";
 
 export default function Vlogs() {
   const { loading: authLoading } = useAuth();
@@ -95,7 +94,6 @@ export default function Vlogs() {
   // Add a fallback check for owner accounts
   useEffect(() => {
     if (userType === "owner" && !isYoutubeAuthed) {
-      logger.log("User is owner but YouTube auth is false, setting to true");
       setIsYoutubeAuthed(true);
     }
   }, [userType, isYoutubeAuthed]);
@@ -103,7 +101,6 @@ export default function Vlogs() {
   const checkYoutubeAuth = async () => {
     if (userType === "owner") {
       // Owner is always authenticated with YouTube
-      logger.log("User is owner, setting YouTube auth to true");
       setIsYoutubeAuthed(true);
       return;
     }
@@ -113,21 +110,17 @@ export default function Vlogs() {
       if (!user) return;
 
       // Check if user has YouTube tokens in Firestore
-      logger.log("Checking YouTube auth status for user:", user.uid);
       try {
         const response = await fetch(`/api/users/${user.uid}/youtube-status`);
         if (!response.ok) {
-          console.error("YouTube status check failed:", await response.text());
           return;
         }
         const userDoc = await response.json();
-        logger.log("YouTube auth status:", userDoc);
         setIsYoutubeAuthed(userDoc.isConnected);
-      } catch (error) {
-        console.error("Error fetching YouTube status:", error);
+      } catch {
+        // Ignore errors when checking YouTube auth status
       }
-    } catch (error) {
-      console.error("Error checking YouTube auth:", error);
+    } catch {
       setIsYoutubeAuthed(false);
     }
   };
@@ -147,7 +140,6 @@ export default function Vlogs() {
       setSyncSuccess(true);
       await loadVlogs(false); // Don't sync again
     } catch (error) {
-      console.error("Error syncing with YouTube:", error);
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
       setSyncMessage(`Sync failed: ${errorMessage}`);
@@ -171,7 +163,6 @@ export default function Vlogs() {
           setSyncMessage(`Sync complete! Found ${syncResults.total} videos.`);
           setSyncSuccess(true);
         } catch (syncError) {
-          console.error("Error fetching YouTube videos:", syncError);
           const errorMessage =
             syncError instanceof Error ? syncError.message : "Unknown error";
           setSyncMessage(`Sync failed: ${errorMessage}`);
@@ -184,10 +175,8 @@ export default function Vlogs() {
 
       // Then fetch vlogs from Firestore
       const fetchedVlogs = await getVlogs();
-      logger.log("Fetched vlogs:", fetchedVlogs.length, fetchedVlogs);
       setVlogs(fetchedVlogs);
     } catch (error) {
-      console.error("Error loading vlogs:", error);
       const errorMessage = error instanceof Error ? error.message : "";
       setError("Failed to load vlogs. " + errorMessage);
 
@@ -283,7 +272,6 @@ export default function Vlogs() {
         loadVlogs();
       }, 1000);
     } catch (error) {
-      console.error("Upload error:", error);
       setError(
         error instanceof Error ? error.message : "Failed to upload vlog"
       );
@@ -299,9 +287,7 @@ export default function Vlogs() {
     try {
       await deleteVlog(vlogId);
       setVlogs(vlogs.filter((vlog) => vlog.id !== vlogId));
-      logger.log("Video deleted successfully");
     } catch (error) {
-      console.error("Delete error:", error);
       setError(
         error instanceof Error ? error.message : "Failed to delete vlog"
       );
@@ -349,9 +335,6 @@ export default function Vlogs() {
         throw new Error("Please log in to edit vlogs");
       }
 
-      logger.log("Editing vlog with ID:", vlogToEdit.id);
-      logger.log("Vlog data:", vlogToEdit);
-
       // Call the update function
       await updateVlog(
         vlogToEdit.id,
@@ -367,7 +350,6 @@ export default function Vlogs() {
       // Reload vlogs
       loadVlogs();
     } catch (error) {
-      console.error("Edit error:", error);
       setError(
         error instanceof Error ? error.message : "Failed to update vlog"
       );
@@ -377,9 +359,7 @@ export default function Vlogs() {
   };
 
   const renderVlogs = () => {
-    logger.log("Rendering", vlogs.length, "vlogs");
     return vlogs.map((vlog) => {
-      logger.log("Rendering vlog:", vlog.id, vlog.title);
       return (
         <Card
           key={vlog.id}
