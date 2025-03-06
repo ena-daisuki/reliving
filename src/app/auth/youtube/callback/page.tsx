@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { auth } from "@/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
+import { logger } from "@/lib/logger";
 
 export default function YouTubeCallback() {
   const router = useRouter();
@@ -15,8 +16,8 @@ export default function YouTubeCallback() {
     const code = searchParams.get("code");
     const errorParam = searchParams.get("error");
 
-    console.log("Current user:", auth.currentUser);
-    console.log("Auth code:", code);
+    logger.log("Current user:", auth.currentUser);
+    logger.log("Auth code:", code);
 
     if (errorParam) {
       console.error("OAuth error:", errorParam);
@@ -33,7 +34,7 @@ export default function YouTubeCallback() {
           user
             .getIdToken(true)
             .then((freshToken) => {
-              console.log("Got fresh token");
+              logger.log("Got fresh token");
               document.cookie = `auth-token=${freshToken}; path=/`;
               setStatus("Making API request...");
 

@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { Send, Mail, ArrowUpRight, Check } from "lucide-react";
 import { PageTitle } from "@/components/ui/page-title";
 import { auth } from "@/lib/firebase";
+import { logger } from "@/lib/logger";
 import {
   sendLetter,
   markLetterAsRead,
@@ -33,7 +34,6 @@ export default function Letters() {
 
     try {
       const currentUser = auth.currentUser;
-      console.log("Current user:", currentUser);
       if (!currentUser) {
         throw new Error("You must be logged in to view letters");
       }
@@ -41,18 +41,15 @@ export default function Letters() {
       try {
         // Get all letters at once
         const allLetters = await getAllLetters();
-        console.log("All letters loaded:", allLetters);
 
         // Filter for received letters
-        const received = allLetters.filter((letter) => {
-          if (letter.toUserId === currentUser.uid) return letter;
-        });
-        console.log("Received letters:", received.length);
+        const received = allLetters.filter(
+          (letter) => letter.toUserId === currentUser.uid
+        );
         setReceivedLetters(received);
 
         // Filter for unread letters
         const unread = received.filter((letter) => !letter.isRead);
-        console.log("Unread letters:", unread.length);
 
         // Mark unread letters as read
         if (unread.length > 0) {
@@ -66,14 +63,13 @@ export default function Letters() {
         const sent = allLetters.filter(
           (letter) => letter.fromUserId === currentUser.uid
         );
-        console.log("Sent letters:", sent.length);
         setSentLetters(sent);
       } catch (error) {
-        console.error("Error loading letters:", error);
+        logger.error("Error loading letters:", error);
         setError("Failed to load letters. Please try again later.");
       }
     } catch (error) {
-      console.error("Error loading letters:", error);
+      logger.error("Error loading letters:", error);
       setError("Failed to load letters. Please try again later.");
     } finally {
       setIsLoading(false);
@@ -97,21 +93,9 @@ export default function Letters() {
         throw new Error("You must be logged in to send a letter");
       }
 
-      console.log("Current user:", currentUser.uid);
-      console.log("User type:", userType);
-
-      // Debug all environment variables
-      console.log("All environment variables:", {
-        NEXT_PUBLIC_SPECIAL_USER_ID: process.env.NEXT_PUBLIC_SPECIAL_USER_ID,
-        NEXT_PUBLIC_OWNER_USER_ID: process.env.NEXT_PUBLIC_OWNER_USER_ID,
-      });
-
       // Hardcoded IDs - these are the correct IDs from your Firestore
       const specialUserId = "IbIvj4aNYrgYGTNr4kPWV1qJWEM2";
       const ownerUserId = "LawWFCMcHka7nwDtmP4xKK9j6b82";
-
-      console.log("Special user ID (hardcoded):", specialUserId);
-      console.log("Owner user ID (hardcoded):", ownerUserId);
 
       // Determine partner ID based on current user
       let partnerId;
@@ -119,55 +103,44 @@ export default function Letters() {
       // If current user is the owner, send to special
       if (currentUser.uid === ownerUserId) {
         partnerId = specialUserId;
-        console.log("Current user is owner, sending to special:", partnerId);
       }
       // If current user is special, send to owner
       else if (currentUser.uid === specialUserId) {
         partnerId = ownerUserId;
-        console.log("Current user is special, sending to owner:", partnerId);
       }
       // Fallback - if we can't determine, use the opposite of current user
       else {
-        console.log("Could not determine user type, using fallback");
         partnerId =
           currentUser.uid === ownerUserId ? specialUserId : ownerUserId;
       }
 
-      console.log("Partner ID:", partnerId);
-
       if (!partnerId) {
-        throw new Error(
-          "Could not find your partner's account. Please make sure both users are registered."
-        );
+        throw new Error("Could not determine recipient for your letter");
       }
 
       // Double check we're not sending to ourselves
       if (currentUser.uid === partnerId) {
-        console.error("Attempted to send letter to self. Fixing partner ID.");
+        logger.error("Attempted to send letter to self. Fixing partner ID.");
         // Force the correct partner based on current user
         partnerId =
           currentUser.uid === ownerUserId ? specialUserId : ownerUserId;
       }
 
-      console.log("Final partner ID for sending:", partnerId);
       try {
         await sendLetter(currentUser.uid, partnerId, newLetter.trim());
-        console.log("Letter sent successfully");
 
         setNewLetter("");
-
-        // Reload letters to show the new one
         await loadLetters();
       } catch (sendError) {
-        console.error("Error in sendLetter function:", sendError);
+        logger.error("Error in sendLetter function:", sendError);
         throw new Error(
           `Failed to send letter: ${
-            sendError instanceof Error ? sendError.message : "Unknown error"
+            sendError instanceof Error ? sendError.message : String(sendError)
           }`
         );
       }
     } catch (error) {
-      console.error("Error sending letter:", error);
+      logger.error("Error sending letter:", error);
       setError(
         error instanceof Error
           ? error.message

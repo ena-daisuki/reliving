@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log("Refreshing token with client ID:", clientId);
+    logger.log("Refreshing token with client ID:", clientId);
 
     // Exchange refresh token for a new access token
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
     }
 
     const tokenData = await tokenResponse.json();
-    console.log("Token refreshed successfully");
+    logger.log("Token refreshed successfully");
 
     // Return the new access token
     return NextResponse.json({

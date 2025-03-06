@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { logger } from "@/lib/logger";
 
 export default function Vlogs() {
   const { loading: authLoading } = useAuth();
@@ -94,7 +95,7 @@ export default function Vlogs() {
   // Add a fallback check for owner accounts
   useEffect(() => {
     if (userType === "owner" && !isYoutubeAuthed) {
-      console.log("User is owner but YouTube auth is false, setting to true");
+      logger.log("User is owner but YouTube auth is false, setting to true");
       setIsYoutubeAuthed(true);
     }
   }, [userType, isYoutubeAuthed]);
@@ -102,7 +103,7 @@ export default function Vlogs() {
   const checkYoutubeAuth = async () => {
     if (userType === "owner") {
       // Owner is always authenticated with YouTube
-      console.log("User is owner, setting YouTube auth to true");
+      logger.log("User is owner, setting YouTube auth to true");
       setIsYoutubeAuthed(true);
       return;
     }
@@ -112,7 +113,7 @@ export default function Vlogs() {
       if (!user) return;
 
       // Check if user has YouTube tokens in Firestore
-      console.log("Checking YouTube auth status for user:", user.uid);
+      logger.log("Checking YouTube auth status for user:", user.uid);
       try {
         const response = await fetch(`/api/users/${user.uid}/youtube-status`);
         if (!response.ok) {
@@ -120,7 +121,7 @@ export default function Vlogs() {
           return;
         }
         const userDoc = await response.json();
-        console.log("YouTube auth status:", userDoc);
+        logger.log("YouTube auth status:", userDoc);
         setIsYoutubeAuthed(userDoc.isConnected);
       } catch (error) {
         console.error("Error fetching YouTube status:", error);
@@ -183,7 +184,7 @@ export default function Vlogs() {
 
       // Then fetch vlogs from Firestore
       const fetchedVlogs = await getVlogs();
-      console.log("Fetched vlogs:", fetchedVlogs.length, fetchedVlogs);
+      logger.log("Fetched vlogs:", fetchedVlogs.length, fetchedVlogs);
       setVlogs(fetchedVlogs);
     } catch (error) {
       console.error("Error loading vlogs:", error);
@@ -298,7 +299,7 @@ export default function Vlogs() {
     try {
       await deleteVlog(vlogId);
       setVlogs(vlogs.filter((vlog) => vlog.id !== vlogId));
-      console.log("Video deleted successfully");
+      logger.log("Video deleted successfully");
     } catch (error) {
       console.error("Delete error:", error);
       setError(
@@ -348,8 +349,8 @@ export default function Vlogs() {
         throw new Error("Please log in to edit vlogs");
       }
 
-      console.log("Editing vlog with ID:", vlogToEdit.id);
-      console.log("Vlog data:", vlogToEdit);
+      logger.log("Editing vlog with ID:", vlogToEdit.id);
+      logger.log("Vlog data:", vlogToEdit);
 
       // Call the update function
       await updateVlog(
@@ -376,9 +377,9 @@ export default function Vlogs() {
   };
 
   const renderVlogs = () => {
-    console.log("Rendering", vlogs.length, "vlogs");
+    logger.log("Rendering", vlogs.length, "vlogs");
     return vlogs.map((vlog) => {
-      console.log("Rendering vlog:", vlog.id, vlog.title);
+      logger.log("Rendering vlog:", vlog.id, vlog.title);
       return (
         <Card
           key={vlog.id}

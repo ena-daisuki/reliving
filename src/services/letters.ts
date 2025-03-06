@@ -1,5 +1,6 @@
 import { db } from "@/lib/firebase";
 import { Letter } from "@/types/database";
+import { logger } from "@/lib/logger";
 import {
   collection,
   addDoc,
@@ -18,12 +19,6 @@ export async function sendLetter(
   content: string
 ) {
   try {
-    console.log("Sending letter:", {
-      fromUserId,
-      toUserId,
-      content: content.substring(0, 20) + "...",
-    });
-
     // Validate inputs
     if (!fromUserId) throw new Error("fromUserId is required");
     if (!toUserId) throw new Error("toUserId is required");
@@ -33,37 +28,26 @@ export async function sendLetter(
       fromUserId,
       toUserId,
       content,
-      createdAt: serverTimestamp(),
       isRead: false,
+      createdAt: serverTimestamp(),
     };
 
-    console.log("Letter data prepared:", letterData);
-
     const docRef = await addDoc(collection(db, "letters"), letterData);
-    console.log("Letter sent successfully with ID:", docRef.id);
-
     return docRef.id;
   } catch (error) {
-    console.error("Error sending letter:", error);
+    logger.error("Error sending letter:", error);
     throw error;
   }
 }
 
 export async function getAllLetters(): Promise<Letter[]> {
-  console.log("Getting all letters from database");
-
   try {
     // Get all letters from the database
     const allLettersSnapshot = await getDocs(collection(db, "letters"));
-    console.log(`Total letters in database: ${allLettersSnapshot.size}`);
 
     if (allLettersSnapshot.empty) {
-      console.log("No letters found in database");
       return [];
     }
-
-    // Log all letters for debugging
-    console.log("All letters in database:");
 
     const letters: Letter[] = [];
 
@@ -81,14 +65,6 @@ export async function getAllLetters(): Promise<Letter[]> {
             : data.createdAt,
       };
 
-      console.log(`Letter ${doc.id}:`, {
-        fromUserId: data.fromUserId,
-        toUserId: data.toUserId,
-        content: data.content?.substring(0, 20) + "...",
-        isRead: data.isRead,
-        createdAt: data.createdAt,
-      });
-
       letters.push(letter);
     });
 
@@ -101,57 +77,24 @@ export async function getAllLetters(): Promise<Letter[]> {
       return dateB.getTime() - dateA.getTime();
     });
   } catch (error) {
-    console.error("Error getting all letters:", error);
+    logger.error("Error getting all letters:", error);
     throw error;
   }
 }
 
 export async function getLettersReceived(userId: string) {
-  console.log("Getting received letters for user:", userId);
-
   try {
-    console.log("Building query for letters sent to:", userId);
-
-    // First, let's check if there are any letters at all
-    const allLettersSnapshot = await getDocs(collection(db, "letters"));
-    console.log(`Total letters in database: ${allLettersSnapshot.size}`);
-
-    if (allLettersSnapshot.size > 0) {
-      console.log("All letters in database:");
-      allLettersSnapshot.forEach((doc) => {
-        const data = doc.data();
-        console.log(`Letter ${doc.id}:`, {
-          fromUserId: data.fromUserId,
-          toUserId: data.toUserId,
-          content: data.content?.substring(0, 20) + "...",
-          isRead: data.isRead,
-          createdAt: data.createdAt,
-        });
-      });
-    }
-
     // Now build the query for this user's received letters
     const q = query(collection(db, "letters"), where("toUserId", "==", userId));
-    console.log("Query built successfully (without orderBy)");
 
-    console.log("Executing query...");
     const snapshot = await getDocs(q);
-    console.log(`Found ${snapshot.size} received letters in Firestore`);
 
     if (snapshot.empty) {
-      console.log("No letters found where toUserId =", userId);
       return [];
     }
 
     const letters = snapshot.docs.map((doc) => {
       const data = doc.data();
-      console.log("Processing received letter data:", {
-        id: doc.id,
-        fromUserId: data.fromUserId,
-        toUserId: data.toUserId,
-        content: data.content?.substring(0, 20) + "...",
-        isRead: data.isRead,
-      });
 
       // Convert Firestore Timestamp to Date
       let createdAt = data.createdAt;
@@ -174,48 +117,32 @@ export async function getLettersReceived(userId: string) {
       };
     }) as Letter[];
 
-    console.log("Processed received letters:", letters);
     return letters;
   } catch (error) {
-    console.error("Error getting received letters:", error);
-    console.error(
+    logger.error("Error getting received letters:", error);
+    logger.error(
       "Error details:",
       error instanceof Error ? error.message : String(error)
     );
-    return [];
+    throw error;
   }
 }
 
 export async function getLettersSent(userId: string) {
-  console.log("Getting sent letters for user:", userId);
-
   try {
-    console.log("Building query for fromUserId:", userId);
     const q = query(
       collection(db, "letters"),
       where("fromUserId", "==", userId)
     );
 
-    console.log("Query built successfully (without orderBy)");
-
-    console.log("Executing query...");
     const snapshot = await getDocs(q);
-    console.log(`Found ${snapshot.size} sent letters in Firestore`);
 
     if (snapshot.empty) {
-      console.log("No letters found where fromUserId =", userId);
       return [];
     }
 
     const letters = snapshot.docs.map((doc) => {
       const data = doc.data();
-      console.log("Processing sent letter data:", {
-        id: doc.id,
-        fromUserId: data.fromUserId,
-        toUserId: data.toUserId,
-        content: data.content?.substring(0, 20) + "...",
-        isRead: data.isRead,
-      });
 
       // Convert Firestore Timestamp to Date
       let createdAt = data.createdAt;
@@ -238,83 +165,70 @@ export async function getLettersSent(userId: string) {
       };
     }) as Letter[];
 
-    console.log("Processed sent letters:", letters);
     return letters;
   } catch (error) {
-    console.error("Error getting sent letters:", error);
-    console.error(
+    logger.error("Error getting sent letters:", error);
+    logger.error(
       "Error details:",
       error instanceof Error ? error.message : String(error)
     );
-    return [];
+    throw error;
   }
 }
 
 export async function markLetterAsRead(letterId: string) {
   try {
-    console.log("Marking letter as read:", letterId);
     const letterRef = doc(db, "letters", letterId);
     await updateDoc(letterRef, {
       isRead: true,
     });
-    console.log("Letter marked as read successfully");
   } catch (error) {
-    console.error("Error marking letter as read:", error);
+    logger.error("Error marking letter as read:", error);
     // Don't throw the error to prevent breaking the UI
   }
 }
 
 export async function getUnreadLettersCount(userId: string): Promise<number> {
-  const q = query(
-    collection(db, "letters"),
-    where("toUserId", "==", userId),
-    where("isRead", "==", false)
-  );
-
-  const snapshot = await getDocs(q);
-  return snapshot.size;
+  try {
+    const q = query(
+      collection(db, "letters"),
+      where("toUserId", "==", userId),
+      where("isRead", "==", false)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.size;
+  } catch (error) {
+    logger.error("Error getting unread letters count:", error);
+    return 0;
+  }
 }
 
 export async function getPartnerUserId(
   currentUserId: string
 ): Promise<string | null> {
   try {
-    console.log("Finding partner for user:", currentUserId);
-
     // Get user IDs from environment variables
     const specialUserId = process.env.NEXT_PUBLIC_SPECIAL_USER_ID;
     const ownerUserId = process.env.NEXT_PUBLIC_OWNER_USER_ID;
 
-    console.log("Special user ID from env:", specialUserId);
-    console.log("Owner user ID from env:", ownerUserId);
-
     if (!specialUserId || !ownerUserId) {
-      console.error("Missing user IDs in environment variables");
+      logger.error("Missing user IDs in environment variables");
       return null;
     }
 
     // If current user is special, return owner ID
     if (currentUserId === specialUserId) {
-      console.log(
-        "Current user is special, returning owner user ID:",
-        ownerUserId
-      );
       return ownerUserId;
     }
 
     // If current user is owner, return special ID
     if (currentUserId === ownerUserId) {
-      console.log(
-        "Current user is owner, returning special user ID:",
-        specialUserId
-      );
       return specialUserId;
     }
 
-    console.log("WARNING: Unknown user ID, could not determine partner");
     return null;
   } catch (error) {
-    console.error("Error finding partner user:", error);
+    logger.error("Error finding partner user:", error);
     return null;
   }
 }

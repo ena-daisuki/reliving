@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { logger } from "@/lib/logger";
 
 export async function GET(request: Request) {
   try {
@@ -71,7 +72,7 @@ export async function GET(request: Request) {
     }
 
     const tokenData = await tokenResponse.json();
-    console.log(
+    logger.log(
       "Received tokens:",
       JSON.stringify({
         access_token: tokenData.access_token ? "✓" : "✗",

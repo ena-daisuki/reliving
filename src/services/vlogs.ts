@@ -3,6 +3,7 @@ import { collection, doc, getDoc, updateDoc, addDoc } from "firebase/firestore";
 import { auth } from "@/lib/firebase";
 import { db } from "@/lib/firebase";
 import { uploadToYoutube, uploadThumbnail } from "@/services/youtube";
+import { logger } from "@/lib/logger";
 
 // YouTube API interfaces
 interface YouTubeVideoItem {
@@ -77,7 +78,7 @@ export async function getVlogs() {
     const user = auth.currentUser;
     if (!user) throw new Error("Not authenticated");
 
-    console.log("Getting vlogs for user:", user.uid);
+    logger.log("Getting vlogs for user:", user.uid);
 
     // Get user data to determine if owner or regular user
     const userDoc = await getDoc(doc(db, "users", user.uid));
@@ -90,7 +91,7 @@ export async function getVlogs() {
     let youtubeVideos: Vlog[] = [];
 
     if (isOwner) {
-      console.log("User is owner, using owner access token directly");
+      logger.log("User is owner, using owner access token directly");
 
       // For owner accounts, use the access token from environment variables
       let accessToken = process.env.NEXT_PUBLIC_OWNER_YOUTUBE_ACCESS_TOKEN;
@@ -110,7 +111,7 @@ export async function getVlogs() {
 
       try {
         // Use the access token to get the owner's videos directly
-        console.log("Using owner access token to get videos");
+        logger.log("Using owner access token to get videos");
 
         // First, get the user's channel ID
         let channelsResponse = await fetch(
@@ -124,7 +125,7 @@ export async function getVlogs() {
 
         // If token is expired, refresh it
         if (channelsResponse.status === 401 && refreshToken) {
-          console.log("Owner token expired, refreshing token...");
+          logger.log("Owner token expired, refreshing token...");
 
           try {
             // Call the refresh token API
@@ -161,7 +162,7 @@ export async function getVlogs() {
               );
             }
 
-            console.log("Successfully refreshed owner token");
+            logger.log("Successfully refreshed owner token");
 
             // Retry with the new token
             channelsResponse = await fetch(
@@ -192,7 +193,7 @@ export async function getVlogs() {
         }
 
         const channelsData = await channelsResponse.json();
-        console.log(
+        logger.log(
           "Owner channels data:",
           JSON.stringify(channelsData, null, 2)
         );
@@ -202,12 +203,12 @@ export async function getVlogs() {
         }
 
         const userChannelId = channelsData.items[0].id;
-        console.log("Owner channel ID:", userChannelId);
+        logger.log("Owner channel ID:", userChannelId);
 
         // Get the uploads playlist ID
         const uploadsPlaylistId =
           channelsData.items[0].contentDetails.relatedPlaylists.uploads;
-        console.log("Owner uploads playlist ID:", uploadsPlaylistId);
+        logger.log("Owner uploads playlist ID:", uploadsPlaylistId);
 
         // Get videos from the uploads playlist
         const videosResponse = await fetch(
@@ -231,11 +232,11 @@ export async function getVlogs() {
         }
 
         const videosData = await videosResponse.json();
-        console.log("Owner videos data:", JSON.stringify(videosData, null, 2));
-        console.log(`Found ${videosData.items?.length || 0} videos for owner`);
+        logger.log("Owner videos data:", JSON.stringify(videosData, null, 2));
+        logger.log(`Found ${videosData.items?.length || 0} videos for owner`);
 
         if (!videosData.items || videosData.items.length === 0) {
-          console.log("No videos found for owner, trying search endpoint");
+          logger.log("No videos found for owner, trying search endpoint");
 
           // Try the search endpoint as a fallback
           const searchResponse = await fetch(
@@ -259,18 +260,15 @@ export async function getVlogs() {
           }
 
           const searchData = await searchResponse.json();
-          console.log(
-            "Owner search data:",
-            JSON.stringify(searchData, null, 2)
-          );
-          console.log(
+          logger.log("Owner search data:", JSON.stringify(searchData, null, 2));
+          logger.log(
             `Found ${
               searchData.items?.length || 0
             } videos from search endpoint for owner`
           );
 
           if (!searchData.items || searchData.items.length === 0) {
-            console.log("No videos found for owner from either approach");
+            logger.log("No videos found for owner from either approach");
             return [];
           }
 
@@ -312,7 +310,7 @@ export async function getVlogs() {
       }
     } else {
       // For special accounts, check if they have YouTube tokens
-      console.log("User is special, checking for YouTube tokens");
+      logger.log("User is special, checking for YouTube tokens");
 
       if (!userData.youtubeTokens || !userData.youtubeTokens.accessToken) {
         throw new Error(
@@ -323,7 +321,7 @@ export async function getVlogs() {
       const accessToken = userData.youtubeTokens.accessToken;
 
       // First, get the user's channel ID
-      console.log("Fetching user's channel ID for special account");
+      logger.log("Fetching user's channel ID for special account");
       const channelsResponse = await fetch(
         `https://www.googleapis.com/youtube/v3/channels?part=id&mine=true&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
         {
@@ -341,7 +339,7 @@ export async function getVlogs() {
         );
         // Handle error or token refresh similar to the existing code
         if (channelsResponse.status === 401) {
-          console.log("Special account token expired, attempting to refresh");
+          logger.log("Special account token expired, attempting to refresh");
 
           if (!userData.youtubeTokens.refreshToken) {
             throw new Error(
@@ -389,18 +387,18 @@ export async function getVlogs() {
       }
 
       const channelsData = await channelsResponse.json();
-      console.log("Channels data:", JSON.stringify(channelsData, null, 2));
+      logger.log("Channels data:", JSON.stringify(channelsData, null, 2));
 
       if (!channelsData.items || channelsData.items.length === 0) {
         throw new Error("No YouTube channel found for this account");
       }
 
       const userChannelId = channelsData.items[0].id;
-      console.log("User channel ID:", userChannelId);
+      logger.log("User channel ID:", userChannelId);
 
       // Now fetch all uploads from this channel
       // First, get the uploads playlist ID
-      console.log("Fetching uploads playlist ID");
+      logger.log("Fetching uploads playlist ID");
       const playlistsResponse = await fetch(
         `https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${userChannelId}&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
         {
@@ -417,14 +415,14 @@ export async function getVlogs() {
       }
 
       const playlistsData = await playlistsResponse.json();
-      console.log("Playlists data:", JSON.stringify(playlistsData, null, 2));
+      logger.log("Playlists data:", JSON.stringify(playlistsData, null, 2));
 
       const uploadsPlaylistId =
         playlistsData.items[0].contentDetails.relatedPlaylists.uploads;
-      console.log("Uploads playlist ID:", uploadsPlaylistId);
+      logger.log("Uploads playlist ID:", uploadsPlaylistId);
 
       // Finally, get all videos from the uploads playlist
-      console.log("Fetching videos from uploads playlist");
+      logger.log("Fetching videos from uploads playlist");
       const videosResponse = await fetch(
         `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${uploadsPlaylistId}&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
         {
@@ -441,13 +439,13 @@ export async function getVlogs() {
       }
 
       const videosData = await videosResponse.json();
-      console.log("Videos data:", JSON.stringify(videosData, null, 2));
-      console.log(
+      logger.log("Videos data:", JSON.stringify(videosData, null, 2));
+      logger.log(
         `Found ${videosData.items?.length || 0} videos in uploads playlist`
       );
 
       if (!videosData.items || videosData.items.length === 0) {
-        console.log(
+        logger.log(
           "No videos found in uploads playlist, trying search endpoint as fallback"
         );
 
@@ -468,8 +466,8 @@ export async function getVlogs() {
         }
 
         const searchData = await searchResponse.json();
-        console.log("Search data:", JSON.stringify(searchData, null, 2));
-        console.log(
+        logger.log("Search data:", JSON.stringify(searchData, null, 2));
+        logger.log(
           `Found ${searchData.items?.length || 0} videos from search endpoint`
         );
 
@@ -486,7 +484,7 @@ export async function getVlogs() {
             createdAt: new Date(item.snippet.publishedAt),
           }));
         } else {
-          console.log("No videos found from either approach");
+          logger.log("No videos found from either approach");
           youtubeVideos = [];
         }
       } else {
@@ -508,7 +506,7 @@ export async function getVlogs() {
       }
     }
 
-    console.log(
+    logger.log(
       "Returning",
       youtubeVideos.length,
       "vlogs directly from YouTube"
@@ -525,7 +523,7 @@ export async function deleteVlog(vlogId: string) {
     const user = auth.currentUser;
     if (!user) throw new Error("Not authenticated");
 
-    console.log("Deleting vlog:", vlogId);
+    logger.log("Deleting vlog:", vlogId);
 
     // Get user data to determine if owner or regular user
     const userDoc = await getDoc(doc(db, "users", user.uid));
@@ -551,7 +549,7 @@ export async function deleteVlog(vlogId: string) {
     }
 
     // Delete the video on YouTube
-    console.log("Deleting video on YouTube:", vlogId);
+    logger.log("Deleting video on YouTube:", vlogId);
     const deleteResponse = await fetch(
       `https://www.googleapis.com/youtube/v3/videos?id=${vlogId}&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
       {
@@ -570,7 +568,7 @@ export async function deleteVlog(vlogId: string) {
       );
     }
 
-    console.log("Video deleted successfully");
+    logger.log("Video deleted successfully");
     return true;
   } catch (error) {
     console.error("Error in deleteVlog:", error);
@@ -583,7 +581,7 @@ export async function getVlogById(id: string) {
     const user = auth.currentUser;
     if (!user) throw new Error("Not authenticated");
 
-    console.log("Getting vlog by ID:", id);
+    logger.log("Getting vlog by ID:", id);
 
     // Get user data to determine if owner or regular user
     const userDoc = await getDoc(doc(db, "users", user.uid));
@@ -609,7 +607,7 @@ export async function getVlogById(id: string) {
     }
 
     // Fetch the video details from YouTube
-    console.log("Fetching video details from YouTube:", id);
+    logger.log("Fetching video details from YouTube:", id);
     const videoResponse = await fetch(
       `https://www.googleapis.com/youtube/v3/videos?part=snippet,status&id=${id}&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
       {
@@ -628,7 +626,7 @@ export async function getVlogById(id: string) {
     }
 
     const videoData = await videoResponse.json();
-    console.log("Video data received:", videoData);
+    logger.log("Video data received:", videoData);
 
     if (!videoData.items || videoData.items.length === 0) {
       throw new Error("Video not found on YouTube");
@@ -676,7 +674,7 @@ export async function updateVlog(
     const user = auth.currentUser;
     if (!user) throw new Error("Not authenticated");
 
-    console.log("Updating vlog:", vlogId);
+    logger.log("Updating vlog:", vlogId);
 
     // Get user data to determine if owner or regular user
     const userDoc = await getDoc(doc(db, "users", user.uid));
@@ -710,7 +708,7 @@ export async function updateVlog(
         : "public";
 
     // Update the video on YouTube
-    console.log("Updating video on YouTube:", vlogId);
+    logger.log("Updating video on YouTube:", vlogId);
     const updateResponse = await fetch(
       `https://www.googleapis.com/youtube/v3/videos?part=snippet,status&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
       {
@@ -742,13 +740,13 @@ export async function updateVlog(
     }
 
     const updateData = await updateResponse.json();
-    console.log("Video updated successfully:", updateData);
+    logger.log("Video updated successfully:", updateData);
 
     // If a new thumbnail was provided, upload it to YouTube
     if (thumbnailFile) {
-      console.log("Uploading new thumbnail for video:", vlogId);
+      logger.log("Uploading new thumbnail for video:", vlogId);
       await uploadThumbnail(accessToken, vlogId, thumbnailFile);
-      console.log("Thumbnail uploaded successfully");
+      logger.log("Thumbnail uploaded successfully");
     }
 
     return vlogId;
