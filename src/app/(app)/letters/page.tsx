@@ -8,11 +8,7 @@ import { Send, Mail, ArrowUpRight, Check } from "lucide-react";
 import { PageTitle } from "@/components/ui/page-title";
 import { auth } from "@/lib/firebase";
 import { logger } from "@/lib/logger";
-import {
-  sendLetter,
-  markLetterAsRead,
-  getAllLetters,
-} from "@/services/letters";
+import { getAllLetters, sendLetter } from "@/services/letters";
 import { Letter } from "@/types/database";
 import { useLetters } from "@/contexts/LetterContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -38,43 +34,28 @@ export default function Letters() {
         throw new Error("You must be logged in to view letters");
       }
 
-      try {
-        // Get all letters at once
-        const allLetters = await getAllLetters();
+      const allLetters = await getAllLetters();
 
-        // Filter for received letters
-        const received = allLetters.filter(
-          (letter) => letter.toUserId === currentUser.uid
-        );
-        setReceivedLetters(received);
+      // Filter letters for current user
+      const sent = allLetters.filter(
+        (letter) => letter.fromUserId === currentUser.uid
+      );
+      const received = allLetters.filter(
+        (letter) => letter.toUserId === currentUser.uid
+      );
 
-        // Filter for unread letters
-        const unread = received.filter((letter) => !letter.isRead);
+      setSentLetters(sent);
+      setReceivedLetters(received);
 
-        // Mark unread letters as read
-        if (unread.length > 0) {
-          await Promise.all(
-            unread.map((letter) => markLetterAsRead(letter.id!))
-          );
-          refreshUnreadCount();
-        }
-
-        // Filter for sent letters
-        const sent = allLetters.filter(
-          (letter) => letter.fromUserId === currentUser.uid
-        );
-        setSentLetters(sent);
-      } catch (error) {
-        logger.error("Error loading letters:", error);
-        setError("Failed to load letters. Please try again later.");
-      }
+      // Refresh unread count after loading letters
+      refreshUnreadCount();
     } catch (error) {
       logger.error("Error loading letters:", error);
       setError("Failed to load letters. Please try again later.");
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser?.uid, refreshUnreadCount]);
+  }, [currentUser, refreshUnreadCount]);
 
   useEffect(() => {
     loadLetters();

@@ -5,11 +5,11 @@ import { cookies } from "next/headers";
 
 export async function GET(
   request: Request,
-  context: { params: { userId: string } }
+  { params }: { params: { userId: string } }
 ) {
   try {
-    // Extract userId from context properly
-    const { userId } = context.params;
+    // Extract userId from params
+    const { userId } = params;
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get("auth-token")?.value;

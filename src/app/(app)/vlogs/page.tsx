@@ -121,7 +121,7 @@ export default function Vlogs() {
     } catch {
       setIsYoutubeAuthed(false);
     }
-  }, []);
+  }, [userType]);
 
   const loadVlogs = useCallback(
     async (shouldSync = true) => {
