@@ -24,6 +24,12 @@ service cloud.firestore {
       allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
     
+    // Letters rules - more permissive for testing
+    match /letters/{letterId} {
+      // Allow any authenticated user to read and write letters
+      allow read, write: if request.auth != null;
+    }
+    
     // Token rules
     match /tokens/{tokenId} {
       // Allow users to read their own tokens

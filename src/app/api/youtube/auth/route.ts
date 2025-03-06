@@ -1,75 +1,57 @@
-import { google } from "googleapis";
 import { NextResponse } from "next/server";
-import { getFirestore } from "firebase-admin/firestore";
-import { auth } from "@/lib/firebase-admin";
-import { cookies } from "next/headers";
 
-const oauth2Client = new google.auth.OAuth2(
-  process.env.NEXT_PUBLIC_YOUTUBE_CLIENT_ID,
-  process.env.YOUTUBE_CLIENT_SECRET,
-  `${process.env.NEXT_PUBLIC_URL}/auth/youtube/callback`
-);
-
-interface APIError {
-  code?: string;
-  message?: string;
+// Generate a random state string for OAuth security
+function generateRandomState() {
+  return (
+    Math.random().toString(36).substring(2, 15) +
+    Math.random().toString(36).substring(2, 15)
+  );
 }
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const code = searchParams.get("code");
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("auth-token")?.value;
-
-  if (!code || !sessionToken) {
-    return NextResponse.json(
-      { error: "Missing authorization code or session token" },
-      { status: 400 }
-    );
-  }
-
+export async function GET() {
   try {
-    const decodedToken = await auth.verifyIdToken(sessionToken);
-    const userId = decodedToken.uid;
+    const clientId = process.env.NEXT_PUBLIC_YOUTUBE_CLIENT_ID;
 
-    // Get tokens directly without setting scopes
-    const { tokens } = await oauth2Client.getToken(code);
-    console.log("Tokens received:", tokens);
-
-    if (!tokens?.access_token) {
-      throw new Error("Invalid token response from YouTube");
+    if (!clientId) {
+      return NextResponse.json(
+        { error: "YouTube client ID not configured" },
+        { status: 500 }
+      );
     }
 
-    // Use admin SDK to update Firestore
-    const adminDb = getFirestore();
-    await adminDb
-      .collection("users")
-      .doc(userId)
-      .set(
-        {
-          youtubeTokens: {
-            accessToken: tokens.access_token,
-            refreshToken: tokens.refresh_token,
-            expiryDate: tokens.expiry_date
-              ? new Date(tokens.expiry_date)
-              : null,
-          },
-        },
-        { merge: true }
-      );
+    // Generate a random state value for security
+    const state = generateRandomState();
 
-    const redirectUrl = new URL("/vlogs", request.url);
-    return NextResponse.redirect(redirectUrl);
-  } catch (error: unknown) {
-    console.error("Authentication error:", error);
+    // Store the state in a cookie for verification when the user returns
+    const redirectUri = `${process.env.NEXT_PUBLIC_URL}/api/youtube/callback`;
 
+    // Create the authorization URL
+    const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    authUrl.searchParams.append("client_id", clientId);
+    authUrl.searchParams.append("redirect_uri", redirectUri);
+    authUrl.searchParams.append("response_type", "code");
+    authUrl.searchParams.append(
+      "scope",
+      "https://www.googleapis.com/auth/youtube"
+    );
+    authUrl.searchParams.append("access_type", "offline");
+    authUrl.searchParams.append("prompt", "consent"); // Force to get refresh token
+    authUrl.searchParams.append("state", state);
+
+    // Set a cookie with the state value
+    const response = NextResponse.redirect(authUrl.toString());
+    response.cookies.set("youtube_oauth_state", state, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 60 * 10, // 10 minutes
+      path: "/",
+    });
+
+    return response;
+  } catch (error) {
+    console.error("Error in YouTube auth endpoint:", error);
     return NextResponse.json(
-      {
-        error: "YouTube authentication failed",
-        message:
-          error instanceof Error ? error.message : "Unknown error occurred",
-        code: (error as APIError)?.code || "UNKNOWN_ERROR",
-      },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }

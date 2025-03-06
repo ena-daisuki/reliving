@@ -7,13 +7,15 @@ import {
   Video,
   Heart,
   Menu,
-  X,LogOut,
+  X,
+  LogOut,
   BarChart2,
 } from "lucide-react"; // Settings,
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useLetters } from "@/contexts/LetterContext";
 
 const navItems = [
   { icon: Home, label: "Home", href: "/dashboard" },
@@ -29,6 +31,7 @@ export function Sidebar() {
   //const userType = getCookie("user-type");
   const [isOpen, setIsOpen] = useState(false);
   const { logout } = useAuth();
+  const { unreadCount } = useLetters();
 
   const toggleSidebar = () => setIsOpen(!isOpen);
 
@@ -66,6 +69,8 @@ export function Sidebar() {
         <nav className="flex-1 p-4">
           {navItems.map(({ icon: Icon, label, href }) => {
             const isActive = pathname === href;
+            const showBadge = label === "Letters" && unreadCount > 0;
+
             return (
               <Link
                 key={href}
@@ -77,7 +82,14 @@ export function Sidebar() {
                     : "text-gray-600 hover:bg-gray-100"
                 }`}
               >
-                <Icon className="w-5 h-5" />
+                <div className="relative">
+                  <Icon className="w-5 h-5" />
+                  {showBadge && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                      {unreadCount > 9 ? "9+" : unreadCount}
+                    </span>
+                  )}
+                </div>
                 <span className="font-medium">{label}</span>
               </Link>
             );

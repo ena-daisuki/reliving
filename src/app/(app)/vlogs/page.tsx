@@ -17,11 +17,11 @@ import {
 import { PageTitle } from "@/components/ui/page-title";
 import { Loading } from "@/components/ui/loading";
 import {
-  uploadVlog,
   getVlogs,
+  uploadVlog,
   deleteVlog,
   updateVlog,
-  syncYouTubeWithFirestore,
+  fetchYouTubeVideos,
 } from "@/services/vlogs";
 import { Vlog } from "@/types/database";
 import { useAuth } from "@/contexts/AuthContext";
@@ -82,6 +82,7 @@ export default function Vlogs() {
   const [syncMessage, setSyncMessage] = useState("");
   const [syncSuccess, setSyncSuccess] = useState(false);
   const [showSyncConfirm, setShowSyncConfirm] = useState(false);
+  const [showUploadSection, setShowUploadSection] = useState(false);
 
   useEffect(() => {
     if (!authLoading) {
@@ -140,19 +141,15 @@ export default function Vlogs() {
     setSyncMessage("Syncing with YouTube...");
     setSyncSuccess(false);
     try {
-      const syncResults = await syncYouTubeWithFirestore();
-      setSyncMessage(
-        `Sync complete! Added ${syncResults.added} new videos, removed ${syncResults.duplicatesRemoved} duplicates.`
-      );
+      const syncResults = await fetchYouTubeVideos();
+      setSyncMessage(`Sync complete! Found ${syncResults.total} videos.`);
       setSyncSuccess(true);
       await loadVlogs(false); // Don't sync again
     } catch (error) {
       console.error("Error syncing with YouTube:", error);
-      setSyncMessage(
-        `Sync failed: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      setSyncMessage(`Sync failed: ${errorMessage}`);
       setSyncSuccess(false);
     } finally {
       setIsSyncing(false);
@@ -169,14 +166,14 @@ export default function Vlogs() {
         setSyncMessage("Syncing with YouTube...");
         setIsSyncing(true);
         try {
-          const syncResults = await syncYouTubeWithFirestore();
-          setSyncMessage(
-            `Sync complete! Added ${syncResults.added} new videos, removed ${syncResults.duplicatesRemoved} duplicates.`
-          );
+          const syncResults = await fetchYouTubeVideos();
+          setSyncMessage(`Sync complete! Found ${syncResults.total} videos.`);
           setSyncSuccess(true);
         } catch (syncError) {
-          console.error("Error syncing YouTube with Firestore:", syncError);
-          setSyncMessage("Sync failed, loading existing vlogs...");
+          console.error("Error fetching YouTube videos:", syncError);
+          const errorMessage =
+            syncError instanceof Error ? syncError.message : "Unknown error";
+          setSyncMessage(`Sync failed: ${errorMessage}`);
           setSyncSuccess(false);
           // Continue even if sync fails
         } finally {
@@ -186,12 +183,24 @@ export default function Vlogs() {
 
       // Then fetch vlogs from Firestore
       const fetchedVlogs = await getVlogs();
+      console.log("Fetched vlogs:", fetchedVlogs.length, fetchedVlogs);
       setVlogs(fetchedVlogs);
     } catch (error) {
       console.error("Error loading vlogs:", error);
-      setError(
-        "Failed to load vlogs. " + (error instanceof Error ? error.message : "")
-      );
+      const errorMessage = error instanceof Error ? error.message : "";
+      setError("Failed to load vlogs. " + errorMessage);
+
+      // Check if this is a token-related error for owner accounts
+      if (
+        userType === "owner" &&
+        (errorMessage.includes("token") ||
+          errorMessage.includes("401") ||
+          errorMessage.includes("authentication"))
+      ) {
+        setError(
+          "Failed to load vlogs. YouTube authentication issue detected. Please re-authenticate with YouTube."
+        );
+      }
     } finally {
       setIsLoading(false);
     }
@@ -284,15 +293,20 @@ export default function Vlogs() {
 
   const handleDelete = async (vlogId: string) => {
     setIsDeleting(vlogId);
+    setError("");
+
     try {
       await deleteVlog(vlogId);
-      setVlogToDelete(null);
-      loadVlogs();
+      setVlogs(vlogs.filter((vlog) => vlog.id !== vlogId));
+      console.log("Video deleted successfully");
     } catch (error) {
       console.error("Delete error:", error);
-      setError("Failed to delete vlog");
+      setError(
+        error instanceof Error ? error.message : "Failed to delete vlog"
+      );
     } finally {
       setIsDeleting(null);
+      setVlogToDelete(null);
     }
   };
 
@@ -361,6 +375,60 @@ export default function Vlogs() {
     }
   };
 
+  const renderVlogs = () => {
+    console.log("Rendering", vlogs.length, "vlogs");
+    return vlogs.map((vlog) => {
+      console.log("Rendering vlog:", vlog.id, vlog.title);
+      return (
+        <Card
+          key={vlog.id}
+          className="p-4 bg-white/90 hover:bg-white transition-colors"
+        >
+          <Link href={`/vlogs/${vlog.id}`} className="block">
+            <div className="relative aspect-video mb-2">
+              <Image
+                src={vlog.thumbnail}
+                alt={vlog.title}
+                fill
+                className="rounded-lg object-cover"
+              />
+            </div>
+            <h3 className="font-semibold mb-2">{vlog.title}</h3>
+          </Link>
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-gray-500">
+              {new Date(vlog.createdAt).toLocaleDateString()}
+            </span>
+            <div className="flex space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setVlogToEdit(vlog)}
+              >
+                <Edit className="h-3 w-3 mr-1" />
+                Edit
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-red-500 hover:text-red-700"
+                onClick={() => setVlogToDelete(vlog)}
+                disabled={isDeleting === vlog.id}
+              >
+                {isDeleting === vlog.id ? (
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3 w-3 mr-1" />
+                )}
+                Delete
+              </Button>
+            </div>
+          </div>
+        </Card>
+      );
+    });
+  };
+
   if (authLoading) {
     return <Loading text="Authenticating..." />;
   }
@@ -396,208 +464,230 @@ export default function Vlogs() {
       )}
 
       {/* Upload new vlog */}
-      <Card className="p-6 bg-white/90 mb-6">
-        <div className="space-y-4">
-          <input
-            type="text"
-            placeholder="Enter vlog title"
-            className="w-full p-2 border rounded-lg"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            disabled={isUploading}
-          />
+      <div className="mb-6">
+        <Button
+          onClick={() => setShowUploadSection(!showUploadSection)}
+          className="mb-4 bg-purple-600 hover:bg-purple-700 text-white"
+        >
+          <Upload className="w-4 h-4 mr-2" />
+          {showUploadSection ? "Hide Upload Form" : "Show Upload Form"}
+        </Button>
 
-          <Textarea
-            placeholder="Enter description (optional)"
-            className="w-full p-2 border rounded-lg"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            disabled={isUploading}
-          />
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label
-                htmlFor="visibility"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
-                Visibility
-              </Label>
-              <Select
-                value={visibility}
-                onValueChange={(value: "public" | "private" | "unlisted") =>
-                  setVisibility(value)
-                }
+        {showUploadSection && (
+          <Card className="p-6 bg-white/90">
+            <div className="space-y-4">
+              <input
+                type="text"
+                placeholder="Enter vlog title"
+                className="w-full p-2 border rounded-lg"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
                 disabled={isUploading}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select visibility" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="public">
-                    <div className="flex items-center">
-                      <Eye className="mr-2 h-4 w-4" />
-                      <span>Public</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="unlisted">
-                    <div className="flex items-center">
-                      <Eye className="mr-2 h-4 w-4 opacity-50" />
-                      <span>Unlisted</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="private">
-                    <div className="flex items-center">
-                      <Eye className="mr-2 h-4 w-4 opacity-25" />
-                      <span>Private</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+              />
 
-            <div>
-              <Label
-                htmlFor="thumbnail"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
-                Custom Thumbnail (optional)
-              </Label>
-              <div className="flex items-center space-x-4">
-                <label
-                  className={`flex-1 ${
-                    isUploading ? "opacity-50 cursor-not-allowed" : ""
-                  }`}
-                >
-                  <div className="relative border border-dashed border-gray-300 rounded-lg p-2 text-center cursor-pointer hover:bg-gray-50">
-                    <input
-                      type="file"
-                      id="thumbnail"
-                      className="sr-only"
-                      accept="image/*"
-                      onChange={handleThumbnailSelect}
-                      disabled={isUploading}
-                    />
-                    <ImageIcon className="mx-auto h-8 w-8 text-gray-400" />
-                    <span className="mt-1 block text-xs text-gray-500">
-                      Select image
-                    </span>
-                  </div>
-                </label>
+              <Textarea
+                placeholder="Enter description (optional)"
+                className="w-full p-2 border rounded-lg"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                disabled={isUploading}
+              />
 
-                {thumbnailPreview && (
-                  <div className="relative h-20 w-32 rounded-md overflow-hidden">
-                    <Image
-                      src={thumbnailPreview}
-                      alt="Thumbnail preview"
-                      fill
-                      className="object-cover"
-                    />
-                    <button
-                      type="button"
-                      className="absolute top-1 right-1 bg-black bg-opacity-50 rounded-full p-1"
-                      onClick={() => {
-                        setSelectedThumbnail(null);
-                        setThumbnailPreview(null);
-                      }}
-                      disabled={isUploading}
-                    >
-                      <Trash2 className="h-3 w-3 text-white" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <label
-            className={`block ${
-              isUploading ? "opacity-50 cursor-not-allowed" : ""
-            }`}
-          >
-            <span className="block text-sm font-medium text-gray-700 mb-1">
-              Video File
-            </span>
-            <input
-              type="file"
-              className="block w-full text-sm text-gray-500
-                file:mr-4 file:py-2 file:px-4
-                file:rounded-full file:border-0
-                file:text-sm file:font-semibold
-                file:bg-purple-50 file:text-purple-700
-                hover:file:bg-purple-100"
-              accept="video/*"
-              onChange={handleFileSelect}
-              disabled={isUploading}
-            />
-          </label>
-
-          {!isYoutubeAuthed && userType !== "owner" && (
-            <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-              <div className="flex items-start">
-                <AlertCircle className="w-5 h-5 text-yellow-500 mr-2 mt-0.5" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm text-yellow-700 font-medium">
-                    YouTube account not connected
-                  </p>
-                  <p className="text-xs text-yellow-600 mt-1">
-                    You need to connect your YouTube account to upload videos.
-                  </p>
-                  <Button
-                    onClick={initYoutubeAuth}
-                    className="mt-2 bg-yellow-500 hover:bg-yellow-600 text-white"
+                  <Label
+                    htmlFor="visibility"
+                    className="block text-sm font-medium text-gray-700 mb-1"
                   >
-                    Connect YouTube Account
-                  </Button>
+                    Visibility
+                  </Label>
+                  <Select
+                    value={visibility}
+                    onValueChange={(value: "public" | "private" | "unlisted") =>
+                      setVisibility(value)
+                    }
+                    disabled={isUploading}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select visibility" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="public">
+                        <div className="flex items-center">
+                          <Eye className="mr-2 h-4 w-4" />
+                          <span>Public</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="unlisted">
+                        <div className="flex items-center">
+                          <Eye className="mr-2 h-4 w-4 opacity-50" />
+                          <span>Unlisted</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="private">
+                        <div className="flex items-center">
+                          <Eye className="mr-2 h-4 w-4 opacity-25" />
+                          <span>Private</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label
+                    htmlFor="thumbnail"
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                  >
+                    Custom Thumbnail (optional)
+                  </Label>
+                  <div className="flex items-center space-x-4">
+                    <label
+                      className={`flex-1 ${
+                        isUploading ? "opacity-50 cursor-not-allowed" : ""
+                      }`}
+                    >
+                      <div className="relative border border-dashed border-gray-300 rounded-lg p-2 text-center cursor-pointer hover:bg-gray-50">
+                        <input
+                          type="file"
+                          id="thumbnail"
+                          className="sr-only"
+                          accept="image/*"
+                          onChange={handleThumbnailSelect}
+                          disabled={isUploading}
+                        />
+                        <ImageIcon className="mx-auto h-8 w-8 text-gray-400" />
+                        <span className="mt-1 block text-xs text-gray-500">
+                          Select image
+                        </span>
+                      </div>
+                    </label>
+
+                    {thumbnailPreview && (
+                      <div className="relative h-20 w-32 rounded-md overflow-hidden">
+                        <Image
+                          src={thumbnailPreview}
+                          alt="Thumbnail preview"
+                          fill
+                          className="object-cover"
+                        />
+                        <button
+                          type="button"
+                          className="absolute top-1 right-1 bg-black bg-opacity-50 rounded-full p-1"
+                          onClick={() => {
+                            setSelectedThumbnail(null);
+                            setThumbnailPreview(null);
+                          }}
+                          disabled={isUploading}
+                        >
+                          <Trash2 className="h-3 w-3 text-white" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
 
-          {error && (
-            <div className="bg-red-50 p-4 rounded-lg border border-red-200">
-              <div className="flex">
-                <AlertCircle className="w-5 h-5 text-red-500 mr-2" />
-                <p className="text-sm text-red-700">{error}</p>
-              </div>
-            </div>
-          )}
-
-          {isUploading && (
-            <div className="space-y-2">
-              <Progress value={uploadProgress} className="h-2" />
-              <p className="text-xs text-gray-500 text-center">
-                {uploadProgress < 100
-                  ? `Uploading video... ${uploadProgress}%`
-                  : "Processing video..."}
-              </p>
-            </div>
-          )}
-
-          {selectedFile && !isUploading && (
-            <div className="space-y-2">
-              <p className="text-sm text-gray-700">
-                Selected file:{" "}
-                <span className="font-medium">{selectedFile.name}</span>(
-                {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB)
-              </p>
-              <Button
-                onClick={handleUpload}
-                className="w-full"
-                disabled={isUploading || !title || !canUpload()}
+              <label
+                className={`block ${
+                  isUploading ? "opacity-50 cursor-not-allowed" : ""
+                }`}
               >
-                <Upload className="w-4 h-4 mr-2" />
-                Upload Vlog
-              </Button>
+                <span className="block text-sm font-medium text-gray-700 mb-1">
+                  Video File
+                </span>
+                <input
+                  type="file"
+                  className="block w-full text-sm text-gray-500
+                    file:mr-4 file:py-2 file:px-4
+                    file:rounded-full file:border-0
+                    file:text-sm file:font-semibold
+                    file:bg-purple-50 file:text-purple-700
+                    hover:file:bg-purple-100"
+                  accept="video/*"
+                  onChange={handleFileSelect}
+                  disabled={isUploading}
+                />
+              </label>
+
               {!isYoutubeAuthed && userType !== "owner" && (
-                <p className="text-xs text-red-500 mt-1">
-                  You need to connect your YouTube account before uploading.
-                </p>
+                <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+                  <div className="flex items-start">
+                    <AlertCircle className="w-5 h-5 text-yellow-500 mr-2 mt-0.5" />
+                    <div>
+                      <p className="text-sm text-yellow-700 font-medium">
+                        YouTube account not connected
+                      </p>
+                      <p className="text-xs text-yellow-600 mt-1">
+                        You need to connect your YouTube account to upload
+                        videos.
+                      </p>
+                      <Button
+                        onClick={initYoutubeAuth}
+                        className="mt-2 bg-yellow-500 hover:bg-yellow-600 text-white"
+                      >
+                        Connect YouTube Account
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {error && (
+                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 flex flex-col">
+                  <div className="flex items-start">
+                    <AlertCircle className="h-5 w-5 mr-2 mt-0.5" />
+                    <span>{error}</span>
+                  </div>
+                  {userType === "owner" &&
+                    error.includes("YouTube authentication") && (
+                      <Link
+                        href="/youtube-auth"
+                        className="bg-red-600 text-white px-4 py-2 rounded mt-2 self-start hover:bg-red-700"
+                      >
+                        Re-authenticate with YouTube
+                      </Link>
+                    )}
+                </div>
+              )}
+
+              {isUploading && (
+                <div className="space-y-2">
+                  <Progress value={uploadProgress} className="h-2" />
+                  <p className="text-xs text-gray-500 text-center">
+                    {uploadProgress < 100
+                      ? `Uploading video... ${uploadProgress}%`
+                      : "Processing video..."}
+                  </p>
+                </div>
+              )}
+
+              {selectedFile && !isUploading && (
+                <div className="space-y-2">
+                  <p className="text-sm text-gray-700">
+                    Selected file:{" "}
+                    <span className="font-medium">{selectedFile.name}</span>(
+                    {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB)
+                  </p>
+                  <Button
+                    onClick={handleUpload}
+                    className="w-full"
+                    disabled={isUploading || !title || !canUpload()}
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    Upload Vlog
+                  </Button>
+                  {!isYoutubeAuthed && userType !== "owner" && (
+                    <p className="text-xs text-red-500 mt-1">
+                      You need to connect your YouTube account before uploading.
+                    </p>
+                  )}
+                </div>
               )}
             </div>
-          )}
-        </div>
-      </Card>
+          </Card>
+        )}
+      </div>
 
       {/* Vlogs management */}
       <div className="flex justify-between items-center mb-4">
@@ -785,7 +875,11 @@ export default function Vlogs() {
               onClick={() => vlogToDelete?.id && handleDelete(vlogToDelete.id)}
               disabled={isDeleting === vlogToDelete?.id}
             >
-              {isDeleting === vlogToDelete?.id ? <Loading /> : "Delete"}
+              {isDeleting === vlogToDelete?.id ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                "Delete"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -823,53 +917,7 @@ export default function Vlogs() {
             </p>
           </div>
         ) : (
-          vlogs.map((vlog) => (
-            <Card
-              key={vlog.id}
-              className="p-4 bg-white/90 hover:bg-white transition-colors"
-            >
-              <Link href={`/vlogs/${vlog.id}`} className="block">
-                <div className="relative aspect-video mb-2">
-                  <Image
-                    src={vlog.thumbnail}
-                    alt={vlog.title}
-                    fill
-                    className="rounded-lg object-cover"
-                  />
-                </div>
-                <h3 className="font-semibold mb-2">{vlog.title}</h3>
-              </Link>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-500">
-                  {new Date(vlog.createdAt).toLocaleDateString()}
-                </span>
-                <div className="flex space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setVlogToEdit(vlog)}
-                  >
-                    <Edit className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    disabled={isDeleting === vlog.id}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setVlogToDelete(vlog);
-                    }}
-                  >
-                    {isDeleting === vlog.id ? (
-                      <Loading />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))
+          renderVlogs()
         )}
       </div>
     </>

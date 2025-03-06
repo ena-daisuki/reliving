@@ -6,39 +6,64 @@ export async function POST(request: Request) {
 
     if (!refreshToken) {
       return NextResponse.json(
-        { error: "No refresh token provided" },
+        { error: "Refresh token is required" },
         { status: 400 }
       );
     }
 
-    const response = await fetch("https://oauth2.googleapis.com/token", {
+    const clientId = process.env.NEXT_PUBLIC_YOUTUBE_CLIENT_ID;
+    const clientSecret = process.env.YOUTUBE_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return NextResponse.json(
+        { error: "Google client credentials not configured" },
+        { status: 500 }
+      );
+    }
+
+    console.log("Refreshing token with client ID:", clientId);
+
+    // Exchange refresh token for a new access token
+    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams({
-        client_id: process.env.NEXT_PUBLIC_YOUTUBE_CLIENT_ID!,
-        client_secret: process.env.YOUTUBE_CLIENT_SECRET!,
+        client_id: clientId,
+        client_secret: clientSecret,
         refresh_token: refreshToken,
         grant_type: "refresh_token",
-      }).toString(),
+      }),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Google OAuth error:", errorText);
+    if (!tokenResponse.ok) {
+      const errorData = await tokenResponse.text();
+      console.error("Error refreshing token:", errorData);
       return NextResponse.json(
-        { error: "Failed to refresh token" },
-        { status: response.status }
+        {
+          error: `Failed to refresh token: ${tokenResponse.status} ${tokenResponse.statusText}`,
+          details: errorData,
+        },
+        { status: tokenResponse.status }
       );
     }
 
-    const data = await response.json();
-    return NextResponse.json({ accessToken: data.access_token });
+    const tokenData = await tokenResponse.json();
+    console.log("Token refreshed successfully");
+
+    // Return the new access token
+    return NextResponse.json({
+      accessToken: tokenData.access_token,
+      expiresIn: tokenData.expires_in,
+    });
   } catch (error) {
-    console.error("Token refresh error:", error);
+    console.error("Error in refresh token API:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      {
+        error: "Internal server error",
+        details: error instanceof Error ? error.message : String(error),
+      },
       { status: 500 }
     );
   }

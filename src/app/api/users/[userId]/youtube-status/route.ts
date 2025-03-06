@@ -5,29 +5,31 @@ import { cookies } from "next/headers";
 
 export async function GET(
   request: Request,
-  { params }: { params: { userId: string } }
+  context: { params: { userId: string } }
 ) {
-  console.log("YouTube status check requested for user:", params.userId);
-
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get("auth-token")?.value;
-
-  if (!sessionToken) {
-    console.log("No auth token found in cookies");
-    return NextResponse.json(
-      { error: "Not authenticated", isConnected: false },
-      { status: 401 }
-    );
-  }
-
   try {
+    // Extract userId from context properly
+    const { userId } = context.params;
+    console.log("YouTube status check requested for user:", userId);
+
+    const cookieStore = await cookies();
+    const sessionToken = cookieStore.get("auth-token")?.value;
+
+    if (!sessionToken) {
+      console.log("No auth token found in cookies");
+      return NextResponse.json(
+        { error: "Not authenticated", isConnected: false },
+        { status: 401 }
+      );
+    }
+
     // Verify the session token
     const decodedToken = await auth.verifyIdToken(sessionToken);
     console.log("Token verified for user:", decodedToken.uid);
 
     // Check if the user is requesting their own data
-    if (decodedToken.uid !== params.userId) {
-      console.log("User ID mismatch:", decodedToken.uid, "vs", params.userId);
+    if (decodedToken.uid !== userId) {
+      console.log("User ID mismatch:", decodedToken.uid, "vs", userId);
       return NextResponse.json(
         { error: "Unauthorized", isConnected: false },
         { status: 403 }
@@ -36,7 +38,7 @@ export async function GET(
 
     // Get the user document from Firestore
     const adminDb = getFirestore();
-    const userDoc = await adminDb.collection("users").doc(params.userId).get();
+    const userDoc = await adminDb.collection("users").doc(userId).get();
 
     if (!userDoc.exists) {
       console.log("User document not found in Firestore");
