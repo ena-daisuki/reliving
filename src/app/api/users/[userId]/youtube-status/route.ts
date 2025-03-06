@@ -3,13 +3,16 @@ import { getFirestore } from "firebase-admin/firestore";
 import { auth } from "@/lib/firebase-admin";
 import { cookies } from "next/headers";
 
-export async function GET(
-  request: Request,
-  { params }: { params: { userId: string } }
-) {
+interface Context {
+  params: {
+    userId: string;
+  };
+}
+
+export async function GET(request: Request, context: Context) {
   try {
-    // Extract userId from params
-    const { userId } = params;
+    // Extract userId from context
+    const userId = context.params.userId;
 
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get("auth-token")?.value;

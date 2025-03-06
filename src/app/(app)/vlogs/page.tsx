@@ -121,7 +121,7 @@ export default function Vlogs() {
     } catch {
       setIsYoutubeAuthed(false);
     }
-  }, [userType]);
+  }, []);
 
   const loadVlogs = useCallback(
     async (shouldSync = true) => {
@@ -165,7 +165,7 @@ export default function Vlogs() {
         setIsLoading(false);
       }
     },
-    [isYoutubeAuthed]
+    [isYoutubeAuthed, userType]
   );
 
   useEffect(() => {
