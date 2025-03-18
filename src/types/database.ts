@@ -28,7 +28,7 @@ export interface Vlog {
   description?: string;
   visibility: "public" | "private" | "unlisted";
   url: string;
-  thumbnail: string;
+  thumbnail?: string;
   createdAt: Date;
 }
 

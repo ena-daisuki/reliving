@@ -8,6 +8,9 @@ const nextConfig = {
       {
         hostname: "i9.ytimg.com",
       },
+      {
+        hostname: "img.youtube.com",
+      },
     ],
   },
   typescript: {

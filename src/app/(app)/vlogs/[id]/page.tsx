@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { PageTitle } from "@/components/ui/page-title";
 import { Vlog } from "@/types/database";
-import { getVlogById } from "@/services/vlogs";
+import { getVlogById, extractYouTubeVideoId } from "@/services/vlogs";
 import { Loading } from "@/components/ui/loading";
 import { AlertCircle, ArrowLeft } from "lucide-react";
 
@@ -58,12 +58,13 @@ export default function VlogPage() {
 
   if (!vlog) return <div>Vlog not found</div>;
 
-  // Convert YouTube watch URL to embed URL if needed
-  const embedUrl = vlog.url.includes("youtube.com/watch?v=")
-    ? vlog.url.replace("youtube.com/watch?v=", "youtube.com/embed/")
-    : vlog.url.includes("youtu.be/")
-    ? vlog.url.replace("youtu.be/", "youtube.com/embed/")
-    : vlog.url;
+  // Get the video ID for embedding
+  const videoId = extractYouTubeVideoId(vlog.url);
+
+  // Create a safe embed URL
+  const embedUrl = videoId
+    ? `https://www.youtube.com/embed/${videoId}`
+    : vlog.url; // Fallback to the original URL if extraction fails
 
   return (
     <>

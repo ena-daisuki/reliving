@@ -31,67 +31,24 @@ export async function uploadToYoutube(
   const userDoc = await getDoc(userRef);
   const userData = userDoc.data();
 
-  // Handle different user types
+  // Get user's YouTube tokens
+  const tokens = userData?.youtubeTokens;
+  if (!tokens)
+    throw new Error(
+      "YouTube not connected. Please connect your YouTube account in settings."
+    );
+
+  // Check if token is expired
   let accessToken;
-  let refreshTokenValue;
-
-  if (userData?.type === "owner") {
-    // For owner, use environment variables
-    accessToken = process.env.NEXT_PUBLIC_OWNER_YOUTUBE_ACCESS_TOKEN;
-    refreshTokenValue = process.env.NEXT_PUBLIC_OWNER_YOUTUBE_REFRESH_TOKEN;
-
-    if (!accessToken || !refreshTokenValue) {
-      throw new Error("Owner YouTube credentials not configured");
-    }
-
-    // Check if token needs refresh (we don't have expiry for owner token in env vars)
-    try {
-      // Test if token is valid with a simple API call
-      const testResponse = await fetch(
-        "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      if (testResponse.status === 401) {
-        // Token expired, refresh it
-        accessToken = await fetch("/api/youtube/refresh", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ refreshToken: refreshTokenValue }),
-        })
-          .then((res) => res.json())
-          .then((data) => data.accessToken);
-
-        if (!accessToken) {
-          throw new Error("Failed to refresh owner YouTube token");
-        }
-      }
-    } catch (error) {
-      console.error("Error checking owner token:", error);
-      throw new Error("Failed to validate YouTube credentials");
-    }
+  if (new Date() >= new Date(tokens.expiryDate)) {
+    const newAccessToken = await refreshToken(tokens.refreshToken);
+    await updateDoc(userRef, {
+      "youtubeTokens.accessToken": newAccessToken,
+      "youtubeTokens.expiryDate": new Date(Date.now() + 3600 * 1000), // 1 hour
+    });
+    accessToken = newAccessToken;
   } else {
-    // For regular users
-    const tokens = userData?.youtubeTokens;
-    if (!tokens) throw new Error("YouTube not connected");
-
-    // Check if token is expired
-    if (new Date() >= new Date(tokens.expiryDate)) {
-      const newAccessToken = await refreshToken(tokens.refreshToken);
-      await updateDoc(userRef, {
-        "youtubeTokens.accessToken": newAccessToken,
-        "youtubeTokens.expiryDate": new Date(Date.now() + 3600 * 1000), // 1 hour
-      });
-      accessToken = newAccessToken;
-    } else {
-      accessToken = tokens.accessToken;
-    }
+    accessToken = tokens.accessToken;
   }
 
   // Step 1: Initialize the resumable upload session
@@ -213,30 +170,7 @@ export async function uploadThumbnail(
 }
 
 export function initYoutubeAuth() {
-  const userType = localStorage.getItem("user-type");
-
-  if (userType === "owner") {
-    throw new Error("Owner account uses a permanent YouTube connection");
-  }
-
-  const REDIRECT_URI = `${window.location.origin}/auth/youtube/callback`;
-  const SCOPES = [
-    "https://www.googleapis.com/auth/youtube.force-ssl",
-    "https://www.googleapis.com/auth/youtube.upload",
-    "https://www.googleapis.com/auth/youtube.readonly",
-    "https://www.googleapis.com/auth/youtube",
-  ];
-
-  const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-  authUrl.searchParams.append(
-    "client_id",
-    process.env.NEXT_PUBLIC_YOUTUBE_CLIENT_ID!
-  );
-  authUrl.searchParams.append("redirect_uri", REDIRECT_URI);
-  authUrl.searchParams.append("response_type", "code");
-  authUrl.searchParams.append("access_type", "offline");
-  authUrl.searchParams.append("prompt", "consent");
-  authUrl.searchParams.append("scope", SCOPES.join(" "));
-
-  window.location.href = authUrl.toString();
+  // Use the server-side auth route instead of direct OAuth URL construction
+  // This avoids CORS issues by letting the server handle the redirect
+  window.location.href = "/api/youtube/auth";
 }

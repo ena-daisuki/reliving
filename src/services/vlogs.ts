@@ -1,26 +1,10 @@
 import { Vlog } from "@/types/database";
-import { collection, doc, getDoc, updateDoc, addDoc } from "firebase/firestore";
+import { collection, doc, getDoc, addDoc } from "firebase/firestore";
 import { auth } from "@/lib/firebase";
 import { db } from "@/lib/firebase";
 import { uploadToYoutube, uploadThumbnail } from "@/services/youtube";
 
 // YouTube API interfaces
-interface YouTubeVideoItem {
-  id: {
-    videoId: string;
-  };
-  snippet: {
-    title: string;
-    description: string;
-    publishedAt: string;
-    thumbnails: {
-      default: { url: string; width: number; height: number };
-      medium: { url: string; width: number; height: number };
-      high: { url: string; width: number; height: number };
-    };
-  };
-}
-
 interface YouTubePlaylistItem {
   snippet: {
     resourceId: {
@@ -82,317 +66,95 @@ export async function getVlogs() {
       throw new Error("User document not found");
     }
     const userData = userDoc.data();
-    const isOwner = userData.type === "owner";
+
+    // Get the user's YouTube tokens, regardless of user type
+    const tokens = userData?.youtubeTokens;
+    if (!tokens) {
+      throw new Error(
+        "YouTube not connected. Please connect your YouTube account in settings."
+      );
+    }
+    const accessToken = tokens.accessToken;
 
     let youtubeVideos: Vlog[] = [];
 
-    if (isOwner) {
-      // For owner accounts, use the access token from environment variables
-      const accessToken = process.env.NEXT_PUBLIC_OWNER_YOUTUBE_ACCESS_TOKEN;
-      const refreshToken = process.env.NEXT_PUBLIC_OWNER_YOUTUBE_REFRESH_TOKEN;
-
-      if (!accessToken) {
-        throw new Error(
-          "Owner YouTube access token not configured in environment variables"
-        );
+    // First, get the user's channel ID
+    const channelsResponse = await fetch(
+      `https://www.googleapis.com/youtube/v3/channels?part=id&mine=true&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
       }
+    );
 
-      if (!refreshToken) {
-        throw new Error(
-          "Owner YouTube refresh token not configured in environment variables"
-        );
-      }
-
-      // Use the access token to get the owner's videos directly
-      // First, get the user's channel ID
-      const channelsResponse = await fetch(
-        `https://www.googleapis.com/youtube/v3/channels?part=id,contentDetails&mine=true&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
+    if (!channelsResponse.ok) {
+      throw new Error(
+        `YouTube API error: ${channelsResponse.status} ${channelsResponse.statusText}`
       );
-
-      if (!channelsResponse.ok) {
-        // Handle token refresh if needed
-        if (channelsResponse.status === 401) {
-          // Call your token refresh API with absolute URL
-          const refreshResponse = await fetch(
-            `${process.env.NEXT_PUBLIC_URL}/api/youtube/refresh`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                refreshToken: refreshToken,
-              }),
-            }
-          );
-
-          if (!refreshResponse.ok) {
-            throw new Error(
-              "Failed to refresh YouTube token - please reconnect your account"
-            );
-          }
-
-          const refreshData = await refreshResponse.json();
-
-          // Update the user document with the new token
-          await updateDoc(doc(db, "users", user.uid), {
-            "youtubeTokens.accessToken": refreshData.accessToken,
-            "youtubeTokens.expiryDate": new Date().toISOString(),
-          });
-
-          // Retry with the new token by calling getVlogs again
-          return getVlogs();
-        }
-
-        throw new Error(
-          `Failed to get owner channel: ${channelsResponse.status} ${channelsResponse.statusText}`
-        );
-      }
-
-      const channelsData = await channelsResponse.json();
-
-      if (!channelsData.items || channelsData.items.length === 0) {
-        throw new Error("No YouTube channel found for owner account");
-      }
-
-      // Get the uploads playlist ID
-      const uploadsPlaylistId =
-        channelsData.items[0].contentDetails.relatedPlaylists.uploads;
-
-      // Get videos from the uploads playlist
-      const videosResponse = await fetch(
-        `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${uploadsPlaylistId}&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      if (!videosResponse.ok) {
-        throw new Error(
-          `Failed to get owner videos: ${videosResponse.status} ${videosResponse.statusText}`
-        );
-      }
-
-      const videosData = await videosResponse.json();
-
-      if (!videosData.items || videosData.items.length === 0) {
-        // Try the search endpoint as a fallback
-        const searchResponse = await fetch(
-          `https://www.googleapis.com/youtube/v3/search?part=snippet&forMine=true&maxResults=50&type=video&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          }
-        );
-
-        if (!searchResponse.ok) {
-          throw new Error(
-            `Failed to search owner videos: ${searchResponse.status} ${searchResponse.statusText}`
-          );
-        }
-
-        const searchData = await searchResponse.json();
-
-        if (!searchData.items || searchData.items.length === 0) {
-          return [];
-        }
-
-        return searchData.items.map((item: YouTubeVideoItem) => ({
-          id: item.id.videoId,
-          title: item.snippet.title,
-          description: item.snippet.description,
-          thumbnail: item.snippet.thumbnails.high.url,
-          publishedAt: item.snippet.publishedAt,
-          url: `https://www.youtube.com/watch?v=${item.id.videoId}`,
-          userId: user.uid,
-          visibility: "public",
-          createdAt: new Date(item.snippet.publishedAt),
-        }));
-      }
-
-      return videosData.items.map((item: YouTubePlaylistItem) => ({
-        id: item.snippet.resourceId.videoId,
-        title: item.snippet.title,
-        description: item.snippet.description,
-        thumbnail: item.snippet.thumbnails.high
-          ? item.snippet.thumbnails.high.url
-          : item.snippet.thumbnails.medium
-          ? item.snippet.thumbnails.medium.url
-          : item.snippet.thumbnails.default!.url,
-        publishedAt: item.snippet.publishedAt,
-        url: `https://www.youtube.com/watch?v=${item.snippet.resourceId.videoId}`,
-        userId: user.uid,
-        visibility: "public",
-        createdAt: new Date(item.snippet.publishedAt),
-      }));
-    } else {
-      // For special accounts, check if they have YouTube tokens
-      if (!userData.youtubeTokens || !userData.youtubeTokens.accessToken) {
-        throw new Error(
-          "YouTube not connected - please connect your YouTube account in settings"
-        );
-      }
-
-      const accessToken = userData.youtubeTokens.accessToken;
-
-      // First, get the user's channel ID
-      const channelsResponse = await fetch(
-        `https://www.googleapis.com/youtube/v3/channels?part=id&mine=true&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      if (!channelsResponse.ok) {
-        // Handle error or token refresh similar to the existing code
-        if (channelsResponse.status === 401) {
-          // Call your token refresh API with absolute URL
-          const refreshResponse = await fetch(
-            `${process.env.NEXT_PUBLIC_URL}/api/youtube/refresh`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                refreshToken: userData.youtubeTokens.refreshToken,
-              }),
-            }
-          );
-
-          if (!refreshResponse.ok) {
-            throw new Error(
-              "Failed to refresh YouTube token - please reconnect your account"
-            );
-          }
-
-          const refreshData = await refreshResponse.json();
-
-          // Update the user document with the new token
-          await updateDoc(doc(db, "users", user.uid), {
-            "youtubeTokens.accessToken": refreshData.accessToken,
-            "youtubeTokens.expiryDate": new Date().toISOString(),
-          });
-
-          // Retry with the new token by calling getVlogs again
-          return getVlogs();
-        } else {
-          throw new Error(
-            `YouTube API error: ${channelsResponse.status} ${channelsResponse.statusText}`
-          );
-        }
-      }
-
-      const channelsData = await channelsResponse.json();
-
-      if (!channelsData.items || channelsData.items.length === 0) {
-        throw new Error("No YouTube channel found for this account");
-      }
-
-      const userChannelId = channelsData.items[0].id;
-
-      // Now fetch all uploads from this channel
-      // First, get the uploads playlist ID
-      const playlistsResponse = await fetch(
-        `https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${userChannelId}&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      if (!playlistsResponse.ok) {
-        throw new Error(
-          `YouTube API error: ${playlistsResponse.status} ${playlistsResponse.statusText}`
-        );
-      }
-
-      const playlistsData = await playlistsResponse.json();
-
-      const uploadsPlaylistId =
-        playlistsData.items[0].contentDetails.relatedPlaylists.uploads;
-
-      // Finally, get all videos from the uploads playlist
-      const videosResponse = await fetch(
-        `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${uploadsPlaylistId}&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      if (!videosResponse.ok) {
-        throw new Error(
-          `YouTube API error: ${videosResponse.status} ${videosResponse.statusText}`
-        );
-      }
-
-      const videosData = await videosResponse.json();
-
-      if (!videosData.items || videosData.items.length === 0) {
-        // Try the search endpoint as a fallback
-        const searchResponse = await fetch(
-          `https://www.googleapis.com/youtube/v3/search?part=snippet&forMine=true&maxResults=50&type=video&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          }
-        );
-
-        if (!searchResponse.ok) {
-          throw new Error(
-            `YouTube API search error: ${searchResponse.status} ${searchResponse.statusText}`
-          );
-        }
-
-        const searchData = await searchResponse.json();
-
-        if (searchData.items && searchData.items.length > 0) {
-          youtubeVideos = searchData.items.map((item: YouTubeVideoItem) => ({
-            id: item.id.videoId,
-            title: item.snippet.title,
-            description: item.snippet.description,
-            thumbnail: item.snippet.thumbnails.high.url,
-            publishedAt: item.snippet.publishedAt,
-            url: `https://www.youtube.com/watch?v=${item.id.videoId}`,
-            userId: user.uid,
-            visibility: "public",
-            createdAt: new Date(item.snippet.publishedAt),
-          }));
-        } else {
-          youtubeVideos = [];
-        }
-      } else {
-        youtubeVideos = videosData.items.map((item: YouTubePlaylistItem) => ({
-          id: item.snippet.resourceId.videoId,
-          title: item.snippet.title,
-          description: item.snippet.description,
-          thumbnail: item.snippet.thumbnails.high
-            ? item.snippet.thumbnails.high.url
-            : item.snippet.thumbnails.medium
-            ? item.snippet.thumbnails.medium.url
-            : item.snippet.thumbnails.default!.url,
-          publishedAt: item.snippet.publishedAt,
-          url: `https://www.youtube.com/watch?v=${item.snippet.resourceId.videoId}`,
-          userId: user.uid,
-          visibility: "public",
-          createdAt: new Date(item.snippet.publishedAt),
-        }));
-      }
     }
+
+    const channelsData = await channelsResponse.json();
+
+    if (!channelsData.items || channelsData.items.length === 0) {
+      throw new Error("No YouTube channel found for this account");
+    }
+
+    const userChannelId = channelsData.items[0].id;
+
+    // Now fetch all uploads from this channel
+    // First, get the uploads playlist ID
+    const playlistsResponse = await fetch(
+      `https://www.googleapis.com/youtube/v3/channels?part=contentDetails&id=${userChannelId}&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!playlistsResponse.ok) {
+      throw new Error(
+        `YouTube API error: ${playlistsResponse.status} ${playlistsResponse.statusText}`
+      );
+    }
+
+    const playlistsData = await playlistsResponse.json();
+
+    const uploadsPlaylistId =
+      playlistsData.items[0].contentDetails.relatedPlaylists.uploads;
+
+    // Finally, get all videos from the uploads playlist
+    const videosResponse = await fetch(
+      `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${uploadsPlaylistId}&key=${process.env.NEXT_PUBLIC_YOUTUBE_API_KEY}`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!videosResponse.ok) {
+      throw new Error(
+        `YouTube API error: ${videosResponse.status} ${videosResponse.statusText}`
+      );
+    }
+
+    const videosData = await videosResponse.json();
+
+    youtubeVideos = videosData.items.map((item: YouTubePlaylistItem) => ({
+      id: item.snippet.resourceId.videoId,
+      title: item.snippet.title,
+      description: item.snippet.description,
+      thumbnailUrl:
+        item.snippet.thumbnails.high?.url ||
+        item.snippet.thumbnails.medium?.url ||
+        item.snippet.thumbnails.default?.url,
+      createdAt: new Date(item.snippet.publishedAt).getTime(),
+      userId: user.uid,
+      visibility: "public", // Default visibility
+      url: `https://www.youtube.com/watch?v=${item.snippet.resourceId.videoId}`,
+    }));
 
     return youtubeVideos;
   } catch (error) {
@@ -411,22 +173,14 @@ export async function deleteVlog(vlogId: string) {
       throw new Error("User document not found");
     }
     const userData = userDoc.data();
-    const isOwner = userData.type === "owner";
 
-    // Get the access token based on user type
-    let accessToken;
-    if (isOwner) {
-      // For owner, use environment variable
-      accessToken = process.env.NEXT_PUBLIC_OWNER_YOUTUBE_ACCESS_TOKEN;
-      if (!accessToken) {
-        throw new Error("Owner YouTube access token not configured");
-      }
-    } else {
-      // For regular users
-      const tokens = userData?.youtubeTokens;
-      if (!tokens) throw new Error("YouTube not connected");
-      accessToken = tokens.accessToken;
-    }
+    // Get the user's YouTube tokens, regardless of user type
+    const tokens = userData?.youtubeTokens;
+    if (!tokens)
+      throw new Error(
+        "YouTube not connected. Please connect your YouTube account in settings."
+      );
+    const accessToken = tokens.accessToken;
 
     // Delete the video on YouTube
     const deleteResponse = await fetch(
@@ -456,28 +210,20 @@ export async function getVlogById(id: string) {
     const user = auth.currentUser;
     if (!user) throw new Error("Not authenticated");
 
-    // Get user data to determine if owner or regular user
+    // Get user data
     const userDoc = await getDoc(doc(db, "users", user.uid));
     if (!userDoc.exists()) {
       throw new Error("User document not found");
     }
     const userData = userDoc.data();
-    const isOwner = userData.type === "owner";
 
-    // Get the access token based on user type
-    let accessToken;
-    if (isOwner) {
-      // For owner, use environment variable
-      accessToken = process.env.NEXT_PUBLIC_OWNER_YOUTUBE_ACCESS_TOKEN;
-      if (!accessToken) {
-        throw new Error("Owner YouTube access token not configured");
-      }
-    } else {
-      // For regular users
-      const tokens = userData?.youtubeTokens;
-      if (!tokens) throw new Error("YouTube not connected");
-      accessToken = tokens.accessToken;
-    }
+    // Get the user's YouTube tokens, regardless of user type
+    const tokens = userData?.youtubeTokens;
+    if (!tokens)
+      throw new Error(
+        "YouTube not connected. Please connect your YouTube account in settings."
+      );
+    const accessToken = tokens.accessToken;
 
     // Fetch the video details from YouTube
     const videoResponse = await fetch(
@@ -505,16 +251,21 @@ export async function getVlogById(id: string) {
     const snippet = video.snippet;
     const status = video.status;
 
+    // Ensure we have a thumbnail URL
+    const thumbnailUrl = snippet.thumbnails.high
+      ? snippet.thumbnails.high.url
+      : snippet.thumbnails.medium
+      ? snippet.thumbnails.medium.url
+      : snippet.thumbnails.default
+      ? snippet.thumbnails.default.url
+      : getYouTubeThumbnailUrl(video.id); // Use our helper function as a fallback
+
     // Convert YouTube data to Vlog format
-    return {
+    const vlogData = {
       id: video.id,
       title: snippet.title,
       description: snippet.description,
-      thumbnail: snippet.thumbnails.high
-        ? snippet.thumbnails.high.url
-        : snippet.thumbnails.medium
-        ? snippet.thumbnails.medium.url
-        : snippet.thumbnails.default.url,
+      thumbnail: thumbnailUrl,
       publishedAt: snippet.publishedAt,
       url: `https://www.youtube.com/watch?v=${video.id}`,
       userId: user.uid,
@@ -526,6 +277,8 @@ export async function getVlogById(id: string) {
           : "public",
       createdAt: new Date(snippet.publishedAt),
     } as Vlog;
+
+    return vlogData;
   } catch (error) {
     throw error;
   }
@@ -542,28 +295,20 @@ export async function updateVlog(
     const user = auth.currentUser;
     if (!user) throw new Error("Not authenticated");
 
-    // Get user data to determine if owner or regular user
+    // Get user data
     const userDoc = await getDoc(doc(db, "users", user.uid));
     if (!userDoc.exists()) {
       throw new Error("User document not found");
     }
     const userData = userDoc.data();
-    const isOwner = userData.type === "owner";
 
-    // Get the access token based on user type
-    let accessToken;
-    if (isOwner) {
-      // For owner, use environment variable
-      accessToken = process.env.NEXT_PUBLIC_OWNER_YOUTUBE_ACCESS_TOKEN;
-      if (!accessToken) {
-        throw new Error("Owner YouTube access token not configured");
-      }
-    } else {
-      // For regular users
-      const tokens = userData?.youtubeTokens;
-      if (!tokens) throw new Error("YouTube not connected");
-      accessToken = tokens.accessToken;
-    }
+    // Get the user's YouTube tokens, regardless of user type
+    const tokens = userData?.youtubeTokens;
+    if (!tokens)
+      throw new Error(
+        "YouTube not connected. Please connect your YouTube account in settings."
+      );
+    const accessToken = tokens.accessToken;
 
     // Convert visibility to YouTube format
     const privacyStatus =
@@ -632,4 +377,43 @@ export async function fetchYouTubeVideos(): Promise<{
   } catch (error) {
     throw error;
   }
+}
+
+// Helper function to get YouTube thumbnail URL from video ID
+export function getYouTubeThumbnailUrl(videoId: string): string {
+  // YouTube provides several thumbnail options, we'll use the high quality one
+  return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+}
+
+// Helper function to extract YouTube video ID from a YouTube URL
+export function extractYouTubeVideoId(url: string): string | null {
+  // Handle youtube.com/watch?v= format
+  let match = url.match(/youtube\.com\/watch\?v=([^&]+)/);
+  if (match && match[1]) return match[1];
+
+  // Handle youtu.be/ format
+  match = url.match(/youtu\.be\/([^?]+)/);
+  if (match && match[1]) return match[1];
+
+  // Handle youtube.com/embed/ format
+  match = url.match(/youtube\.com\/embed\/([^?]+)/);
+  if (match && match[1]) return match[1];
+
+  return null;
+}
+
+// Helper to get a safe thumbnail URL for a vlog
+export function getSafeVlogThumbnailUrl(vlog: {
+  url: string;
+  thumbnail?: string;
+}): string {
+  // If vlog has a valid thumbnail, use it
+  if (vlog.thumbnail) return vlog.thumbnail;
+
+  // Otherwise try to extract a YouTube thumbnail
+  const videoId = extractYouTubeVideoId(vlog.url);
+  if (videoId) return getYouTubeThumbnailUrl(videoId);
+
+  // If all else fails, return an empty string
+  return "";
 }

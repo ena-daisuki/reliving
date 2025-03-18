@@ -2,79 +2,49 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { auth } from "@/lib/firebase";
-import { onAuthStateChanged } from "firebase/auth";
-import { logger } from "@/lib/logger";
+import { Loading } from "@/components/ui/loading";
 
 export default function YouTubeCallback() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState("Initializing...");
+  const [status] = useState("Redirecting you back to the application...");
 
   useEffect(() => {
+    // Check for error in URL
     const searchParams = new URLSearchParams(window.location.search);
-    const code = searchParams.get("code");
     const errorParam = searchParams.get("error");
 
-    logger.log("Current user:", auth.currentUser);
-    logger.log("Auth code:", code);
-
     if (errorParam) {
-      console.error("OAuth error:", errorParam);
-      setError("Authentication failed: " + errorParam);
+      setError(`Authentication failed: ${errorParam}`);
       return;
     }
 
-    if (code) {
-      setStatus("Waiting for authentication...");
+    // Delay a moment, then redirect to the vlogs page
+    // The server should have already processed the authentication
+    const timer = setTimeout(() => {
+      router.push("/vlogs");
+    }, 2000);
 
-      const unsubscribe = onAuthStateChanged(auth, (user) => {
-        if (user) {
-          setStatus("Getting fresh token...");
-          user
-            .getIdToken(true)
-            .then((freshToken) => {
-              logger.log("Got fresh token");
-              document.cookie = `auth-token=${freshToken}; path=/`;
-              setStatus("Making API request...");
-
-              return fetch(`/api/youtube/auth?code=${code}`).then(
-                (response) => {
-                  if (response.redirected) {
-                    window.location.href = response.url;
-                    return;
-                  }
-                  return response.json();
-                }
-              );
-            })
-            .catch((error) => {
-              console.error("Detailed auth error:", error);
-              setError(error.message);
-            });
-        } else {
-          setError("Not authenticated with Firebase");
-          router.push("/login");
-        }
-      });
-
-      return () => unsubscribe();
-    }
+    return () => clearTimeout(timer);
   }, [router]);
 
   if (error) {
     return (
-      <div className="p-4">
-        <h2 className="text-red-500 font-bold">Authentication Error</h2>
-        <pre className="mt-2 p-2 bg-red-50 rounded">{error}</pre>
+      <div className="p-4 max-w-xl mx-auto mt-8">
+        <h2 className="text-red-500 font-bold text-xl mb-4">
+          Authentication Error
+        </h2>
+        <pre className="mt-2 p-4 bg-red-50 rounded border border-red-200 overflow-auto">
+          {error}
+        </pre>
       </div>
     );
   }
 
   return (
-    <div className="p-4">
-      <h2>YouTube Authentication</h2>
-      <p>{status}</p>
+    <div className="p-4 max-w-xl mx-auto mt-8 text-center">
+      <h2 className="text-xl font-semibold mb-4">YouTube Authentication</h2>
+      <Loading text={status} />
     </div>
   );
 }

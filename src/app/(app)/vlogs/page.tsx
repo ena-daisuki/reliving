@@ -22,10 +22,11 @@ import {
   deleteVlog,
   updateVlog,
   fetchYouTubeVideos,
+  getSafeVlogThumbnailUrl,
 } from "@/services/vlogs";
 import { Vlog } from "@/types/database";
 import { useAuth } from "@/contexts/AuthContext";
-import { auth, db } from "@/lib/firebase";
+import { auth } from "@/lib/firebase";
 import { initYoutubeAuth } from "@/services/youtube";
 import Image from "next/image";
 import Link from "next/link";
@@ -47,10 +48,9 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { getDoc, doc } from "firebase/firestore";
 
 export default function Vlogs() {
-  const { loading: authLoading, userType } = useAuth();
+  const { loading: authLoading } = useAuth();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedThumbnail, setSelectedThumbnail] = useState<File | null>(null);
   const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null);
@@ -67,6 +67,7 @@ export default function Vlogs() {
   const [vlogToDelete, setVlogToDelete] = useState<Vlog | null>(null);
   const [error, setError] = useState("");
   const [isYoutubeAuthed, setIsYoutubeAuthed] = useState(false);
+  const [youtubeAuthSuccess, setYoutubeAuthSuccess] = useState(false);
   const [vlogToEdit, setVlogToEdit] = useState<Vlog | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
@@ -92,33 +93,42 @@ export default function Vlogs() {
         return;
       }
 
-      // Get user data to determine if owner or regular user
-      const userDoc = await getDoc(doc(db, "users", user.uid));
-      if (!userDoc.exists()) {
-        setIsYoutubeAuthed(false);
-        return;
-      }
-      const userData = userDoc.data();
-
-      // Check if user is owner
-      if (userData.type === "owner") {
-        // Owner is always authenticated with YouTube
-        setIsYoutubeAuthed(true);
-        return;
-      }
-
       // Check if user has YouTube tokens in Firestore
       try {
         const response = await fetch(`/api/users/${user.uid}/youtube-status`);
-        if (!response.ok) {
+
+        if (response.status === 401) {
+          // Handle expired token
+          setIsYoutubeAuthed(false);
+          setError(
+            "Your authentication session has expired. Please refresh the page or log in again."
+          );
           return;
         }
-        const userDoc = await response.json();
-        setIsYoutubeAuthed(userDoc.isConnected);
-      } catch {
+
+        if (!response.ok) {
+          setIsYoutubeAuthed(false);
+          return;
+        }
+
+        const userData = await response.json();
+
+        if (userData.tokenExpired) {
+          setIsYoutubeAuthed(false);
+          setError(
+            "Your authentication session has expired. Please refresh the page or log in again."
+          );
+          return;
+        }
+
+        setIsYoutubeAuthed(userData.isConnected);
+      } catch (error) {
         // Ignore errors when checking YouTube auth status
+        console.error("Error checking YouTube authentication:", error);
+        setIsYoutubeAuthed(false);
       }
-    } catch {
+    } catch (error) {
+      console.error("Auth error:", error);
       setIsYoutubeAuthed(false);
     }
   }, []);
@@ -149,23 +159,11 @@ export default function Vlogs() {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : "";
         setError("Failed to load vlogs. " + errorMessage);
-
-        // Check if this is a token-related error for owner accounts
-        if (
-          userType === "owner" &&
-          (errorMessage.includes("token") ||
-            errorMessage.includes("401") ||
-            errorMessage.includes("authentication"))
-        ) {
-          setError(
-            "Failed to load vlogs. YouTube authentication issue detected. Please re-authenticate with YouTube."
-          );
-        }
       } finally {
         setIsLoading(false);
       }
     },
-    [isYoutubeAuthed, userType]
+    [isYoutubeAuthed]
   );
 
   useEffect(() => {
@@ -175,12 +173,24 @@ export default function Vlogs() {
     }
   }, [authLoading, loadVlogs, checkYoutubeAuth]);
 
-  // Add a fallback check for owner accounts
+  // Check for YouTube auth success message in URL
   useEffect(() => {
-    if (userType === "owner" && !isYoutubeAuthed) {
-      setIsYoutubeAuthed(true);
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get("youtube") === "success") {
+      setYoutubeAuthSuccess(true);
+
+      // Remove the query parameter from URL
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, "", newUrl);
+
+      // Auto-hide the success message after 5 seconds
+      const timer = setTimeout(() => {
+        setYoutubeAuthSuccess(false);
+      }, 5000);
+
+      return () => clearTimeout(timer);
     }
-  }, [userType, isYoutubeAuthed]);
+  }, []);
 
   const handleSyncConfirm = () => {
     setShowSyncConfirm(false);
@@ -228,9 +238,7 @@ export default function Vlogs() {
   };
 
   const canUpload = () => {
-    // Owner can always upload
-    if (userType === "owner") return true;
-    // Regular users need YouTube authentication
+    // All users need YouTube authentication to upload
     return isYoutubeAuthed;
   };
 
@@ -314,7 +322,9 @@ export default function Vlogs() {
       setEditDescription(vlogToEdit.description || "");
       setEditVisibility(vlogToEdit.visibility);
       setEditThumbnail(null);
-      setEditThumbnailPreview(vlogToEdit.thumbnail);
+      setEditThumbnailPreview(
+        vlogToEdit.thumbnail || getSafeVlogThumbnailUrl(vlogToEdit)
+      );
     }
   }, [vlogToEdit]);
 
@@ -370,6 +380,8 @@ export default function Vlogs() {
 
   const renderVlogs = () => {
     return vlogs.map((vlog) => {
+      const thumbnailUrl = getSafeVlogThumbnailUrl(vlog);
+
       return (
         <Card
           key={vlog.id}
@@ -377,12 +389,18 @@ export default function Vlogs() {
         >
           <Link href={`/vlogs/${vlog.id}`} className="block">
             <div className="relative aspect-video mb-2">
-              <Image
-                src={vlog.thumbnail}
-                alt={vlog.title}
-                fill
-                className="rounded-lg object-cover"
-              />
+              {thumbnailUrl ? (
+                <Image
+                  src={thumbnailUrl}
+                  alt={vlog.title}
+                  fill
+                  className="rounded-lg object-cover"
+                />
+              ) : (
+                <div className="w-full h-full bg-gray-200 rounded-lg flex items-center justify-center">
+                  <ImageIcon className="h-10 w-10 text-gray-400" />
+                </div>
+              )}
             </div>
             <h3 className="font-semibold mb-2">{vlog.title}</h3>
           </Link>
@@ -431,6 +449,19 @@ export default function Vlogs() {
   return (
     <>
       <PageTitle>Vlogs 🎥</PageTitle>
+
+      {/* YouTube Auth Success Message */}
+      {youtubeAuthSuccess && (
+        <div className="mb-4 p-4 rounded-lg bg-green-50 border border-green-200">
+          <div className="flex items-center">
+            <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
+            <p className="text-green-700">
+              Your YouTube account has been successfully connected! You can now
+              upload and manage videos.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Sync status message */}
       {(isSyncing || syncSuccess) && (
@@ -601,7 +632,7 @@ export default function Vlogs() {
                 />
               </label>
 
-              {!isYoutubeAuthed && userType !== "owner" && (
+              {!isYoutubeAuthed && (
                 <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
                   <div className="flex items-start">
                     <AlertCircle className="w-5 h-5 text-yellow-500 mr-2 mt-0.5" />
@@ -630,15 +661,14 @@ export default function Vlogs() {
                     <AlertCircle className="h-5 w-5 mr-2 mt-0.5" />
                     <span>{error}</span>
                   </div>
-                  {userType === "owner" &&
-                    error.includes("YouTube authentication") && (
-                      <Link
-                        href="/youtube-auth"
-                        className="bg-red-600 text-white px-4 py-2 rounded mt-2 self-start hover:bg-red-700"
-                      >
-                        Re-authenticate with YouTube
-                      </Link>
-                    )}
+                  {error.includes("YouTube authentication") && (
+                    <Link
+                      href="/youtube-auth"
+                      className="bg-red-600 text-white px-4 py-2 rounded mt-2 self-start hover:bg-red-700"
+                    >
+                      Re-authenticate with YouTube
+                    </Link>
+                  )}
                 </div>
               )}
 
@@ -668,7 +698,7 @@ export default function Vlogs() {
                     <Upload className="w-4 h-4 mr-2" />
                     Upload Vlog
                   </Button>
-                  {!isYoutubeAuthed && userType !== "owner" && (
+                  {!isYoutubeAuthed && (
                     <p className="text-xs text-red-500 mt-1">
                       You need to connect your YouTube account before uploading.
                     </p>
@@ -783,14 +813,18 @@ export default function Vlogs() {
             <div className="grid gap-2">
               <Label htmlFor="edit-thumbnail">Thumbnail</Label>
               <div className="flex items-center space-x-4">
-                <div className="relative h-24 w-40 rounded-md overflow-hidden">
-                  {editThumbnailPreview && (
+                <div className="relative h-24 w-40 rounded-md overflow-hidden bg-gray-100">
+                  {editThumbnailPreview ? (
                     <Image
                       src={editThumbnailPreview}
                       alt="Thumbnail preview"
                       fill
                       className="object-cover"
                     />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <ImageIcon className="h-8 w-8 text-gray-400" />
+                    </div>
                   )}
                 </div>
                 <div className="flex-1">

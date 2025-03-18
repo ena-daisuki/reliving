@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { logger } from "@/lib/logger";
+import { getFirestore } from "firebase-admin/firestore";
+import { auth } from "@/lib/firebase-admin";
 
 export async function GET(request: Request) {
   try {
@@ -28,6 +30,7 @@ export async function GET(request: Request) {
     // Get the state from the cookie to verify
     const cookieStore = await cookies();
     const cookieState = cookieStore.get("youtube_oauth_state")?.value;
+    const sessionToken = cookieStore.get("auth-token")?.value;
 
     if (!cookieState || cookieState !== state) {
       console.error("State mismatch, possible CSRF attack");
@@ -81,17 +84,46 @@ export async function GET(request: Request) {
       })
     );
 
-    // Save the tokens to .env.local
-    // Note: This is just for demonstration. In a real app, you'd store these securely.
-    const accessToken = tokenData.access_token;
-    const refreshToken = tokenData.refresh_token;
+    // Get the user ID from the session token if available
+    if (!sessionToken) {
+      return NextResponse.redirect(
+        `${process.env.NEXT_PUBLIC_URL}/error?message=Not authenticated with Firebase`
+      );
+    }
 
-    // Display the tokens on a success page
-    return NextResponse.redirect(
-      `${process.env.NEXT_PUBLIC_URL}/success?accessToken=${encodeURIComponent(
-        accessToken
-      )}&refreshToken=${encodeURIComponent(refreshToken)}`
-    );
+    try {
+      // Verify the token to get the user ID
+      const decodedToken = await auth.verifyIdToken(sessionToken);
+      const userId = decodedToken.uid;
+
+      // Save tokens to the user's profile in Firestore
+      const db = getFirestore();
+      await db
+        .collection("users")
+        .doc(userId)
+        .update({
+          youtubeTokens: {
+            accessToken: tokenData.access_token,
+            refreshToken: tokenData.refresh_token,
+            expiryDate: new Date(
+              Date.now() + tokenData.expires_in * 1000
+            ).toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        });
+
+      logger.log(`Saved YouTube tokens for user ${userId}`);
+
+      // Redirect to the vlogs page with success message
+      return NextResponse.redirect(
+        `${process.env.NEXT_PUBLIC_URL}/vlogs?youtube=success`
+      );
+    } catch (authError) {
+      console.error("Authentication error:", authError);
+      return NextResponse.redirect(
+        `${process.env.NEXT_PUBLIC_URL}/error?message=Authentication verification failed`
+      );
+    }
   } catch (error) {
     console.error("Error in callback:", error);
     return NextResponse.redirect(
